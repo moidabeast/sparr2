@@ -1,392 +1,391 @@
-import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
-import { Send, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { forwardRef, useImperativeHandle, useEffect, useState, useRef } from 'react';
+import { ArrowLeft, Video, VideoOff, Mic, MicOff, Users, Crown, Eye, Settings, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { useGetMessages, useSendMessage, useAddActivePeer, useRemoveActivePeer, useLeaveRoom, useGetActivePeers, useUpdatePresence, useSendHeartbeat, useDisconnect } from '../hooks/useQueries';
-import { getSessionId } from '../lib/session';
-import WebRTCManager, { WebRTCManagerRef } from '../components/WebRTCManager';
+import { Badge } from '@/components/ui/badge';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import WebRTCManager from '../components/WebRTCManager';
+import TikTokChatOverlay from '../components/TikTokChatOverlay';
 import ConnectedUsersList from '../components/ConnectedUsersList';
-import UploadSpeedTest, { QualityTier } from '../components/UploadSpeedTest';
+import LiveKitViewer from '../components/LiveKitViewer';
+import LiveKitBroadcaster from '../components/LiveKitBroadcaster';
+import { useGetRoom, useJoinRoom, useLeaveRoom, useSaveLivePreview, useGetMessages, useSendMessage, useGetReactions, useSendReaction, useGetActivePeers } from '../hooks/useQueries';
+import { getSessionId } from '../lib/session';
 import { toast } from 'sonner';
+import { ExternalBlob } from '../backend';
+import type { RoomRole } from '../types/backend';
 import type { RoomRef } from '../App';
 
 interface RoomProps {
   roomId: string;
+  userRole: RoomRole;
   onLeave: () => void;
+  onBackToLobby: () => void;
 }
 
-const HEARTBEAT_INTERVAL = 5000; // Send heartbeat every 5 seconds
-
-const Room = forwardRef<RoomRef, RoomProps>(({ roomId, onLeave }, ref) => {
+const Room = forwardRef<RoomRef, RoomProps>(({ roomId, userRole, onLeave, onBackToLobby }, ref) => {
+  const { data: room, isLoading } = useGetRoom(roomId);
+  const { data: messages = [] } = useGetMessages(roomId);
+  const { data: reactions = [] } = useGetReactions(roomId);
+  const { data: activePeers = [] } = useGetActivePeers(roomId);
+  const joinRoom = useJoinRoom();
+  const leaveRoom = useLeaveRoom();
+  const saveLivePreview = useSaveLivePreview();
+  const sendMessage = useSendMessage();
+  const sendReaction = useSendReaction();
+  
+  const [isVideoEnabled, setIsVideoEnabled] = useState(userRole === 'participant');
+  const [isAudioEnabled, setIsAudioEnabled] = useState(userRole === 'participant');
+  const [showUsers, setShowUsers] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [hasJoined, setHasJoined] = useState(false);
+  const [messageInput, setMessageInput] = useState('');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [broadcastStatus, setBroadcastStatus] = useState<'inactive' | 'active'>('inactive');
+  const [showMobileControls, setShowMobileControls] = useState(false);
+  
+  const webrtcRef = useRef<any>(null);
+  const previewIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const currentSessionId = getSessionId();
 
-  const { data: messages = [] } = useGetMessages(roomId);
-  const { data: activePeers = [] } = useGetActivePeers(roomId);
-  const sendMessage = useSendMessage();
-  const addActivePeer = useAddActivePeer();
-  const removeActivePeer = useRemoveActivePeer();
-  const leaveRoomMutation = useLeaveRoom();
-  const updatePresence = useUpdatePresence();
-  const sendHeartbeat = useSendHeartbeat();
-  const disconnect = useDisconnect();
-
-  const [messageInput, setMessageInput] = useState('');
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-  const [uploadSpeedKbps, setUploadSpeedKbps] = useState<number>(0);
-  const [currentQualityTier, setCurrentQualityTier] = useState<QualityTier>('medium');
-  const [isStreamingAllowed, setIsStreamingAllowed] = useState(true);
-  const [hasCompletedSpeedTest, setHasCompletedSpeedTest] = useState(false);
-
-  const webrtcManagerRef = useRef<WebRTCManagerRef>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const hasJoinedRef = useRef(false);
-  const cleanupInProgressRef = useRef(false);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Scroll to bottom when messages change
+  // Join room on mount
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Add as active peer and initialize presence when joining room
-  useEffect(() => {
-    if (!hasJoinedRef.current && roomId) {
-      hasJoinedRef.current = true;
-      console.log('[Room] Adding as active peer and initializing presence');
-      addActivePeer.mutate(roomId);
-      
-      // Initialize presence as visible
-      updatePresence.mutate({
-        roomId,
-        isVisible: true,
-      });
-    }
-  }, [roomId]);
-
-  // Heartbeat mechanism to maintain presence
-  useEffect(() => {
-    if (!roomId) return;
-
-    // Start heartbeat interval
-    heartbeatIntervalRef.current = setInterval(() => {
-      console.log('[Room Heartbeat] Sending heartbeat');
-      sendHeartbeat.mutate({ roomId });
-    }, HEARTBEAT_INTERVAL);
-
-    console.log('[Room Heartbeat] Heartbeat interval started');
-
-    return () => {
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
-        console.log('[Room Heartbeat] Heartbeat interval cleared');
-      }
-    };
-  }, [roomId]);
-
-  // Track visibility changes to update presence (but NOT disconnect)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      const isVisible = document.visibilityState === 'visible';
-      console.log(`[Room Visibility] Page visibility changed to: ${isVisible ? 'visible' : 'hidden'}`);
-      
-      // Update presence status but maintain connection
-      updatePresence.mutate({
-        roomId,
-        isVisible,
-      });
-
-      if (isVisible) {
-        console.log('[Room Visibility] Page became visible, user still connected');
-      } else {
-        console.log('[Room Visibility] Page hidden, maintaining connection with heartbeat');
+    const joinRoomAsync = async () => {
+      try {
+        await joinRoom.mutateAsync({ roomId, role: userRole });
+        setHasJoined(true);
+        toast.success(`Joined as ${userRole === 'participant' ? 'Participant' : 'Spectator'}`);
+      } catch (error) {
+        console.error('Failed to join room:', error);
+        toast.error('Failed to join room');
+        onBackToLobby();
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    joinRoomAsync();
+  }, [roomId, userRole]);
+
+  // Capture and upload preview for participants only
+  useEffect(() => {
+    if (userRole !== 'participant' || !hasJoined) return;
+
+    const capturePreview = async () => {
+      if (webrtcRef.current?.capturePreview) {
+        try {
+          const blob = await webrtcRef.current.capturePreview();
+          if (blob) {
+            const arrayBuffer = await blob.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            const externalBlob = ExternalBlob.fromBytes(uint8Array);
+            
+            await saveLivePreview.mutateAsync({ roomId, image: externalBlob });
+          }
+        } catch (error) {
+          console.error('Failed to capture/upload preview:', error);
+        }
+      }
+    };
+
+    // Capture preview every 30 seconds
+    previewIntervalRef.current = setInterval(capturePreview, 30000);
+    
+    // Capture initial preview after 3 seconds
+    setTimeout(capturePreview, 3000);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (previewIntervalRef.current) {
+        clearInterval(previewIntervalRef.current);
+      }
     };
-  }, [roomId]);
+  }, [roomId, userRole, hasJoined, saveLivePreview]);
 
-  // Handle upload speed test completion
-  const handleSpeedTestComplete = (speedKbps: number, qualityTier: QualityTier) => {
-    console.log('[Room] Upload speed test complete:', { speedKbps, qualityTier });
-    setUploadSpeedKbps(speedKbps);
-    setCurrentQualityTier(qualityTier);
-    setHasCompletedSpeedTest(true);
+  // Get local stream from WebRTC manager
+  useEffect(() => {
+    const updateLocalStream = () => {
+      if (webrtcRef.current?.getDebugInfo) {
+        const debugInfo = webrtcRef.current.getDebugInfo();
+        
+        // Get local stream for LiveKit broadcaster
+        if (debugInfo.localStream) {
+          setLocalStream(debugInfo.localStream);
+        }
+      }
+    };
 
-    // Block streaming if speed is too low
-    if (qualityTier === 'blocked') {
-      setIsStreamingAllowed(false);
-      setIsVideoEnabled(false);
-      toast.error('Streaming blocked due to insufficient upload speed');
-    } else {
-      setIsStreamingAllowed(true);
-    }
-  };
+    // Update local stream every second
+    const interval = setInterval(updateLocalStream, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
-  // Handle quality changes during streaming
-  const handleQualityChange = (newTier: QualityTier, reason: string) => {
-    console.log('[Room] Quality tier changed:', { newTier, reason });
-    setCurrentQualityTier(newTier);
-
-    // Block streaming if quality drops to blocked
-    if (newTier === 'blocked') {
-      setIsStreamingAllowed(false);
-      setIsVideoEnabled(false);
-      toast.error('Streaming paused due to low upload speed');
-    } else if (!isStreamingAllowed) {
-      // Only re-enable if currently blocked
-      setIsStreamingAllowed(true);
-      toast.success('Upload speed improved - streaming enabled');
-    }
-  };
-
-  // Cleanup function
-  const performCleanup = async () => {
-    if (cleanupInProgressRef.current) {
-      console.log('[Room] Cleanup already in progress, skipping');
-      return;
-    }
-
-    cleanupInProgressRef.current = true;
-    console.log('[Room] Starting cleanup...');
-
+  const handleLeave = async () => {
+    if (isLeaving) return;
+    
+    setIsLeaving(true);
+    
     try {
-      // Stop heartbeat
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
+      // Clear preview interval
+      if (previewIntervalRef.current) {
+        clearInterval(previewIntervalRef.current);
+        previewIntervalRef.current = null;
       }
 
-      // WebRTC cleanup
-      if (webrtcManagerRef.current) {
-        await webrtcManagerRef.current.cleanup();
+      // Cleanup WebRTC connections
+      if (webrtcRef.current?.cleanup) {
+        await webrtcRef.current.cleanup();
       }
 
-      // Disconnect from presence system
-      try {
-        await disconnect.mutateAsync(roomId);
-        console.log('[Room] Disconnected from presence system');
-      } catch (error) {
-        console.error('[Room] Error disconnecting from presence:', error);
-      }
-
-      // Remove from active peers
-      try {
-        await removeActivePeer.mutateAsync(roomId);
-        console.log('[Room] Removed from active peers');
-      } catch (error) {
-        console.error('[Room] Error removing from active peers:', error);
-      }
-
-      // Leave room
-      try {
-        await leaveRoomMutation.mutateAsync(roomId);
-        console.log('[Room] Left room');
-      } catch (error) {
-        console.error('[Room] Error leaving room:', error);
-      }
-
-      console.log('[Room] Cleanup complete');
+      // Leave room on backend
+      await leaveRoom.mutateAsync(roomId);
+      
+      // Navigate back
+      onLeave();
     } catch (error) {
-      console.error('[Room] Error during cleanup:', error);
-    } finally {
-      cleanupInProgressRef.current = false;
+      console.error('Error leaving room:', error);
+      toast.error('Error leaving room');
+      setIsLeaving(false);
     }
   };
 
-  // Expose cleanup method via ref
+  // Expose handleLeave to parent via ref
   useImperativeHandle(ref, () => ({
-    handleLeave: async () => {
-      await performCleanup();
-      onLeave();
-    },
+    handleLeave,
   }));
 
-  // Browser event cleanup - ONLY for actual page unload/close
-  useEffect(() => {
-    let isUnloading = false;
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      console.log('[Room Browser Event] beforeunload triggered - user closing/refreshing page');
-      isUnloading = true;
-      
-      // Use sendBeacon for reliable cleanup on page unload
-      // This is a fire-and-forget API that works even as the page is unloading
-      try {
-        // Note: sendBeacon requires a URL endpoint. Since we're using IC canisters,
-        // we'll do synchronous cleanup here instead
-        disconnect.mutate(roomId);
-        removeActivePeer.mutate(roomId);
-        leaveRoomMutation.mutate(roomId);
-      } catch (error) {
-        console.error('[Room Browser Event] Error in beforeunload cleanup:', error);
-      }
-    };
-
-    const handlePageHide = (e: PageTransitionEvent) => {
-      console.log('[Room Browser Event] pagehide triggered');
-      
-      // Only cleanup if page is being discarded (not cached for bfcache)
-      if (!e.persisted) {
-        console.log('[Room Browser Event] Page being discarded - performing cleanup');
-        isUnloading = true;
-        
-        try {
-          disconnect.mutate(roomId);
-          removeActivePeer.mutate(roomId);
-          leaveRoomMutation.mutate(roomId);
-        } catch (error) {
-          console.error('[Room Browser Event] Error in pagehide cleanup:', error);
-        }
-      } else {
-        console.log('[Room Browser Event] Page cached for bfcache - maintaining connection');
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('pagehide', handlePageHide);
-
-    console.log('[Room Browser Event] Event listeners registered (beforeunload, pagehide)');
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('pagehide', handlePageHide);
-      console.log('[Room Browser Event] Event listeners removed');
-    };
-  }, [roomId]);
-
-  const handleSendMessage = () => {
-    if (messageInput.trim()) {
-      sendMessage.mutate({ roomId, content: messageInput });
-      setMessageInput('');
-    }
-  };
-
-  const toggleAudio = () => {
-    setIsAudioEnabled(!isAudioEnabled);
-  };
-
   const toggleVideo = () => {
-    if (!isStreamingAllowed) {
-      toast.error('Video streaming is blocked due to low upload speed');
+    if (userRole === 'spectator') {
+      toast.info('Spectators cannot enable video');
       return;
     }
     setIsVideoEnabled(!isVideoEnabled);
   };
 
+  const toggleAudio = () => {
+    if (userRole === 'spectator') {
+      toast.info('Spectators cannot enable audio');
+      return;
+    }
+    setIsAudioEnabled(!isAudioEnabled);
+  };
+
+  const handleSendMessage = () => {
+    if (!messageInput.trim()) return;
+    
+    sendMessage.mutate({ roomId, content: messageInput });
+    setMessageInput('');
+  };
+
+  const handleSendReaction = (emoji: string) => {
+    sendReaction.mutate({ roomId, emoji });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-background via-background to-primary/5">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent mx-auto" />
+          <p className="text-lg font-semibold text-muted-foreground">Loading room...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!room) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5">
+        <div className="text-center space-y-4">
+          <p className="text-xl font-semibold text-destructive">Room not found</p>
+          <Button onClick={onBackToLobby} variant="outline" className="rounded-2xl">
+            Back to Lobby
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const isParticipant = userRole === 'participant';
+  const isSpectator = userRole === 'spectator';
+
   return (
-    <div className="container mx-auto p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <h1 className="text-2xl font-bold">Room: {roomId}</h1>
-      </div>
+    <div className="immersive-room-container">
+      {/* Top Bar with Room Info and Controls - z-index: 20 */}
+      <div className="immersive-top-bar">
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={handleLeave}
+            disabled={isLeaving}
+            variant="ghost"
+            size="icon"
+            className="rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-sm"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-white drop-shadow-lg">{room.subject}</h1>
+              {isParticipant && (
+                <Badge variant="default" className="bg-primary/90 text-white gap-1 px-2 py-0.5">
+                  <Crown className="h-3 w-3" />
+                  <span className="text-xs font-semibold">Participant</span>
+                </Badge>
+              )}
+              {isSpectator && (
+                <Badge variant="secondary" className="bg-secondary/90 text-white gap-1 px-2 py-0.5">
+                  <Eye className="h-3 w-3" />
+                  <span className="text-xs font-semibold">Spectator</span>
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-white/80 drop-shadow">{room.description}</p>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Main content area */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Upload Speed Test */}
-          <UploadSpeedTest
-            onTestComplete={handleSpeedTestComplete}
-            onQualityChange={handleQualityChange}
-            isStreaming={hasCompletedSpeedTest && isVideoEnabled}
-          />
-
-          {/* WebRTC Video */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Video Chat</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <WebRTCManager
-                ref={webrtcManagerRef}
-                roomId={roomId}
-                isAudioEnabled={isAudioEnabled}
-                isVideoEnabled={isVideoEnabled && isStreamingAllowed}
-              />
-
-              {/* Controls */}
-              <div className="mt-4 flex justify-center gap-2">
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setShowUsers(!showUsers)}
+            variant="ghost"
+            size="icon"
+            className="rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-sm"
+          >
+            <Users className="h-5 w-5" />
+          </Button>
+          
+          {/* Desktop: Controls Button with Dropdown */}
+          <div className="hidden md:block">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
-                  variant={isAudioEnabled ? 'default' : 'destructive'}
+                  variant="ghost"
                   size="icon"
+                  className="rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-sm"
+                >
+                  <Settings className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
                   onClick={toggleAudio}
+                  disabled={isSpectator}
+                  className="flex items-center gap-2 cursor-pointer"
                 >
-                  {isAudioEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-                </Button>
-                <Button
-                  variant={isVideoEnabled && isStreamingAllowed ? 'default' : 'destructive'}
-                  size="icon"
+                  {isAudioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  <span>{isAudioEnabled ? 'Mute' : 'Unmute'}</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onClick={toggleVideo}
-                  disabled={!isStreamingAllowed}
+                  disabled={isSpectator}
+                  className="flex items-center gap-2 cursor-pointer"
                 >
-                  {isVideoEnabled && isStreamingAllowed ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  {isVideoEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                  <span>{isVideoEnabled ? 'Turn Off Camera' : 'Turn On Camera'}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {/* Connected Users */}
-          <ConnectedUsersList activePeers={activePeers} currentSessionId={currentSessionId} />
-
-          {/* Chat */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Chat</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ScrollArea className="h-[300px] pr-4">
-                <div className="space-y-2">
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id.toString()}
-                      className={`rounded-lg p-2 ${
-                        msg.sender === currentSessionId
-                          ? 'bg-primary text-primary-foreground ml-8'
-                          : 'bg-muted mr-8'
-                      }`}
-                    >
-                      <div className="text-xs font-mono opacity-70 mb-1">
-                        {msg.sender === currentSessionId ? 'You' : msg.sender}
-                      </div>
-                      <div className="text-sm">{msg.content}</div>
-                    </div>
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
-
-              <Separator />
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Type a message..."
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSendMessage();
-                    }
-                  }}
-                />
-                <Button size="icon" onClick={handleSendMessage}>
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Mobile: Controls Button with Inline Controls */}
+          <div className="md:hidden">
+            <Button
+              onClick={() => setShowMobileControls(!showMobileControls)}
+              variant="ghost"
+              size="icon"
+              className="rounded-full bg-black/40 hover:bg-black/60 text-white backdrop-blur-sm"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* Session ID Tag - Positioned below header area - z-index: 14 */}
+      <div className="session-id-tag">
+        <span className="text-xs font-semibold text-white/90">
+          Session: {currentSessionId}
+        </span>
+      </div>
+
+      {/* Mobile Controls Panel - Only visible on mobile when toggled */}
+      {showMobileControls && (
+        <div className="mobile-controls-panel md:hidden">
+          <div className="mobile-controls-content">
+            <Button
+              onClick={toggleAudio}
+              disabled={isSpectator}
+              variant="ghost"
+              size="icon"
+              className="mobile-control-button"
+            >
+              {isAudioEnabled ? <Mic className="h-6 w-6" /> : <MicOff className="h-6 w-6" />}
+            </Button>
+            <Button
+              onClick={toggleVideo}
+              disabled={isSpectator}
+              variant="ghost"
+              size="icon"
+              className="mobile-control-button"
+            >
+              {isVideoEnabled ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* WebRTC Video Grid or LiveKit Viewer - z-index: 0 (base layer) */}
+      <div className="immersive-video-grid">
+        {isSpectator ? (
+          <LiveKitViewer
+            roomId={roomId}
+            currentSessionId={currentSessionId}
+          />
+        ) : (
+          <WebRTCManager
+            ref={webrtcRef}
+            roomId={roomId}
+            userRole={userRole}
+            isVideoEnabled={isVideoEnabled}
+            isAudioEnabled={isAudioEnabled}
+            liveKitToken={null}
+          />
+        )}
+      </div>
+
+      {/* LiveKit Broadcaster Component for Participants - Hidden UI, only status callback */}
+      {isParticipant && localStream && (
+        <LiveKitBroadcaster
+          roomId={roomId}
+          currentSessionId={currentSessionId}
+          localStream={localStream}
+          onStatusChange={setBroadcastStatus}
+        />
+      )}
+
+      {/* TikTok-style Chat Overlay - z-index: 30 */}
+      <TikTokChatOverlay
+        roomId={roomId}
+        messages={messages}
+        reactions={reactions}
+        currentSessionId={currentSessionId}
+        messageInput={messageInput}
+        onMessageInputChange={setMessageInput}
+        onSendMessage={handleSendMessage}
+        onSendReaction={handleSendReaction}
+      />
+
+      {/* Connected Users Modal - z-index: 40 */}
+      {showUsers && (
+        <div className="absolute top-20 right-4 z-40 w-72 md:w-80 bg-black/80 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-white/10">
+          <div className="flex items-center justify-between mb-3">
+            <Button
+              onClick={() => setShowUsers(false)}
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-white hover:bg-white/20 ml-auto"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+          <ConnectedUsersList activePeers={activePeers} currentSessionId={currentSessionId} />
+        </div>
+      )}
     </div>
   );
 });
