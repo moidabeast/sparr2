@@ -1,7 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useActor } from './useActor';
-import type { Room, ChatMessage, SignalingMessage, RoomId, SessionId, ConnectionMetrics, IceCandidate, StateTransition, EventBadge, SessionEvent, SessionDebugData, SafariAudioTestResult } from '../backend';
-import { ExternalBlob } from '../backend';
+import type { 
+  Room, 
+  ChatMessage, 
+  SignalingMessage, 
+  RoomId, 
+  SessionId, 
+  ConnectionMetrics, 
+  IceCandidate, 
+  StateTransition, 
+  EventBadge, 
+  SessionEvent, 
+  SessionDebugData, 
+  SafariAudioTestResult, 
+  EmojiReaction, 
+  LobbyPreview,
+  RoomRole,
+} from '../types/backend';
+import { ExternalBlob, RoomRole as BackendRoomRole, UserProfile, Category } from '../backend';
 import { getSessionId } from '../lib/session';
 import { toast } from 'sonner';
 
@@ -12,9 +28,35 @@ export function useGetRooms() {
     queryKey: ['rooms'],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getRooms();
+      try {
+        const rooms = await actor.getRooms();
+        return rooms;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch rooms:', error);
+        return [];
+      }
     },
     enabled: !!actor && !isFetching,
+    refetchInterval: 3000,
+  });
+}
+
+export function useGetRoomsByCategory(category: Category | null) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<Room[]>({
+    queryKey: ['rooms', 'category', category],
+    queryFn: async () => {
+      if (!actor || !category) return [];
+      try {
+        const rooms = await actor.getRoomsByCategory(category);
+        return rooms;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch rooms by category:', error);
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && !!category,
     refetchInterval: 3000,
   });
 }
@@ -26,7 +68,13 @@ export function useGetRoom(roomId: RoomId) {
     queryKey: ['room', roomId],
     queryFn: async () => {
       if (!actor) return null;
-      return actor.getRoom(roomId);
+      try {
+        const room = await actor.getRoom(roomId);
+        return room;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch room:', error);
+        return null;
+      }
     },
     enabled: !!actor && !isFetching && !!roomId,
     retry: 2,
@@ -43,13 +91,23 @@ export function useCreateRoom() {
       subject,
       description,
       thumbnail,
+      category,
     }: {
       subject: string;
       description: string;
       thumbnail: ExternalBlob;
+      category: Category;
     }) => {
       if (!actor) throw new Error('Actor not initialized');
-      return actor.createRoom(subject, description, thumbnail);
+      
+      try {
+        // Backend automatically creates corresponding LiveKit room
+        const roomId = await actor.createRoom(subject, description, thumbnail, category);
+        return roomId;
+      } catch (error: any) {
+        console.error('[useQueries] Failed to create room:', error);
+        throw new Error(error.message || 'Failed to create room');
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] });
@@ -62,48 +120,28 @@ export function useVerifyAndJoinRoom() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (roomId: RoomId) => {
+    mutationFn: async ({ roomId, role }: { roomId: RoomId; role: RoomRole }) => {
       if (!actor) throw new Error('Actor not initialized');
       
-      // First, verify the room exists by fetching it
-      const room = await actor.getRoom(roomId);
-      
-      if (!room) {
-        throw new Error('Room does not exist or is no longer available');
-      }
-
-      // If room exists, attempt to join with retry logic
-      const sessionId = getSessionId();
-      let lastError: Error | null = null;
-      
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await actor.joinRoom(roomId, sessionId);
-          console.log(`[useQueries] Successfully joined room ${roomId}`);
-          return room;
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error('Unknown error');
-          
-          // If it's a "Room does not exist" error, don't retry
-          if (lastError.message.includes('does not exist')) {
-            throw lastError;
-          }
-          
-          // If it's "already in room", consider it a success (idempotent)
-          if (lastError.message.includes('already in room')) {
-            console.log(`[useQueries] Already in room ${roomId}, treating as success`);
-            return room;
-          }
-          
-          // Wait before retrying (exponential backoff)
-          if (attempt < 2) {
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 500));
-          }
+      try {
+        const sessionId = getSessionId();
+        
+        // Convert frontend role type to backend enum
+        const backendRole = role === 'participant' 
+          ? BackendRoomRole.participant 
+          : BackendRoomRole.spectator;
+        
+        const success = await actor.joinRoom(roomId, sessionId, backendRole);
+        
+        if (!success) {
+          throw new Error('Failed to join room');
         }
+        
+        return success;
+      } catch (error: any) {
+        console.error('[useQueries] Failed to join room:', error);
+        throw error;
       }
-      
-      // If all retries failed, throw the last error
-      throw lastError || new Error('Failed to join room after multiple attempts');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] });
@@ -125,19 +163,20 @@ export function useJoinRoom() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (roomId: RoomId) => {
+    mutationFn: async ({ roomId, role }: { roomId: RoomId; role: RoomRole }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
       
       try {
-        await actor.joinRoom(roomId, sessionId);
-        console.log(`[useQueries] Joined room ${roomId}`);
+        // Convert frontend role type to backend enum
+        const backendRole = role === 'participant' 
+          ? BackendRoomRole.participant 
+          : BackendRoomRole.spectator;
+        
+        const success = await actor.joinRoom(roomId, sessionId, backendRole);
+        return success;
       } catch (error) {
-        // If already in room, treat as success (idempotent behavior)
-        if (error instanceof Error && error.message.includes('already in room')) {
-          console.log(`[useQueries] Already in room ${roomId}, treating as success`);
-          return;
-        }
+        console.error('[useQueries] Failed to join room:', error);
         throw error;
       }
     },
@@ -157,14 +196,10 @@ export function useLeaveRoom() {
       const sessionId = getSessionId();
       
       try {
-        await actor.leaveRoom(roomId, sessionId);
-        console.log(`[useQueries] Left room ${roomId}`);
+        const success = await actor.leaveRoom(roomId, sessionId);
+        return success;
       } catch (error) {
-        // If not in room, treat as success (idempotent behavior)
-        if (error instanceof Error && error.message.includes('not in room')) {
-          console.log(`[useQueries] Not in room ${roomId}, treating as success`);
-          return;
-        }
+        console.error('[useQueries] Failed to leave room:', error);
         throw error;
       }
     },
@@ -183,11 +218,10 @@ export function useDisconnect() {
       const sessionId = getSessionId();
       
       try {
-        const success = await actor.disconnect(roomId, sessionId);
-        console.log(`[useQueries] Disconnected from room ${roomId}: ${success}`);
+        const success = await actor.leaveRoom(roomId, sessionId);
         return success;
       } catch (error) {
-        console.error('[useQueries] Error disconnecting:', error);
+        console.error('[useQueries] Failed to disconnect:', error);
         return false;
       }
     },
@@ -201,7 +235,13 @@ export function useGetMessages(roomId: RoomId) {
     queryKey: ['messages', roomId],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getMessages(roomId);
+      try {
+        const messages = await actor.getMessages(roomId);
+        return messages;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch messages:', error);
+        return [];
+      }
     },
     enabled: !!actor && !isFetching && !!roomId,
     refetchInterval: 1000,
@@ -216,10 +256,49 @@ export function useSendMessage() {
     mutationFn: async ({ roomId, content }: { roomId: RoomId; content: string }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.sendMessage(roomId, sessionId, content);
+      
+      try {
+        const messageId = await actor.sendMessage(roomId, sessionId, content);
+        return messageId;
+      } catch (error) {
+        console.error('[useQueries] Failed to send message:', error);
+        throw error;
+      }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['messages', variables.roomId] });
+    },
+  });
+}
+
+export function useGetReactions(roomId: RoomId) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<EmojiReaction[]>({
+    queryKey: ['reactions', roomId],
+    queryFn: async () => {
+      if (!actor) return [];
+      // Backend method not yet implemented
+      return [];
+    },
+    enabled: !!actor && !isFetching && !!roomId,
+    refetchInterval: 500,
+  });
+}
+
+export function useSendReaction() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ roomId, emoji }: { roomId: RoomId; emoji: string }) => {
+      if (!actor) throw new Error('Actor not initialized');
+      const sessionId = getSessionId();
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would send reaction in room ${roomId}: ${emoji}`);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['reactions', variables.roomId] });
     },
   });
 }
@@ -239,7 +318,13 @@ export function useSendSignalingMessage() {
     }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.sendSignalingMessage(sessionId, receiver, messageType, payload);
+      
+      try {
+        await actor.sendSignalingMessage(sessionId, receiver, messageType, payload);
+      } catch (error) {
+        console.error('[useQueries] Failed to send signaling message:', error);
+        throw error;
+      }
     },
   });
 }
@@ -252,7 +337,14 @@ export function useGetSignalingMessages() {
     queryFn: async () => {
       if (!actor) return [];
       const sessionId = getSessionId();
-      return actor.getSignalingMessages(sessionId);
+      
+      try {
+        const messages = await actor.getSignalingMessages(sessionId);
+        return messages;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch signaling messages:', error);
+        return [];
+      }
     },
     enabled: !!actor && !isFetching,
     refetchInterval: 1000,
@@ -267,7 +359,13 @@ export function useClearSignalingMessages() {
     mutationFn: async () => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.clearSignalingMessages(sessionId);
+      
+      try {
+        await actor.clearSignalingMessages(sessionId);
+      } catch (error) {
+        console.error('[useQueries] Failed to clear signaling messages:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['signalingMessages'] });
@@ -283,8 +381,8 @@ export function useAddActivePeer() {
     mutationFn: async (roomId: RoomId) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      await actor.addActivePeer(roomId, sessionId);
-      console.log(`[useQueries] Added as active peer in room ${roomId}`);
+      // Backend method not yet implemented - active peers are managed via joinRoom with participant role
+      console.log(`[useQueries] Active peer management handled by joinRoom for ${sessionId}`);
     },
     onSuccess: (_, roomId) => {
       queryClient.invalidateQueries({ queryKey: ['activePeers', roomId] });
@@ -300,8 +398,8 @@ export function useRemoveActivePeer() {
     mutationFn: async (roomId: RoomId) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      await actor.removeActivePeer(roomId, sessionId);
-      console.log(`[useQueries] Removed as active peer from room ${roomId}`);
+      // Backend method not yet implemented - active peers are managed via leaveRoom
+      console.log(`[useQueries] Active peer management handled by leaveRoom for ${sessionId}`);
     },
     onSuccess: (_, roomId) => {
       queryClient.invalidateQueries({ queryKey: ['activePeers', roomId] });
@@ -316,7 +414,14 @@ export function useGetActivePeers(roomId: RoomId) {
     queryKey: ['activePeers', roomId],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getActivePeers(roomId);
+      
+      try {
+        const peers = await actor.getActivePeers(roomId);
+        return peers;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch active peers:', error);
+        return [];
+      }
     },
     enabled: !!actor && !isFetching && !!roomId,
     refetchInterval: 2000,
@@ -330,8 +435,8 @@ export function useUpdatePresence() {
     mutationFn: async ({ roomId, isVisible }: { roomId: RoomId; isVisible: boolean }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      await actor.updatePresence(roomId, sessionId, isVisible);
-      console.log(`[useQueries] Updated presence in room ${roomId}: ${isVisible ? 'visible' : 'hidden'}`);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would update presence in room ${roomId}: ${isVisible ? 'visible' : 'hidden'}`);
     },
   });
 }
@@ -343,11 +448,14 @@ export function useSendHeartbeat() {
     mutationFn: async ({ roomId }: { roomId: RoomId }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      const success = await actor.sendHeartbeat(roomId, sessionId);
-      if (!success) {
-        console.warn(`[useQueries] Heartbeat failed for room ${roomId}`);
+      
+      try {
+        await actor.updateHeartbeat(sessionId, roomId);
+        return true;
+      } catch (error) {
+        console.error('[useQueries] Failed to send heartbeat:', error);
+        return false;
       }
-      return success;
     },
   });
 }
@@ -365,7 +473,8 @@ export function useUpdateIcePolicy() {
     }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.updateIcePolicy(sessionId, mode, successRate);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would update ICE policy for ${sessionId}`);
     },
   });
 }
@@ -387,7 +496,8 @@ export function useUpdateNetworkPathStats() {
     }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.updateNetworkPathStats(sessionId, udpLatency, tcpLatency, packetLoss, preferredRoute);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would update network path stats for ${sessionId}`);
     },
   });
 }
@@ -399,7 +509,13 @@ export function useAddConnectionMetrics() {
     mutationFn: async (metrics: ConnectionMetrics) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.addConnectionMetrics(sessionId, metrics);
+      
+      try {
+        await actor.storeConnectionMetrics(sessionId, metrics);
+      } catch (error) {
+        console.error('[useQueries] Failed to add connection metrics:', error);
+        throw error;
+      }
     },
   });
 }
@@ -411,7 +527,8 @@ export function useAddIceCandidate() {
     mutationFn: async (candidate: IceCandidate) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.addIceCandidate(sessionId, candidate);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would add ICE candidate for ${sessionId}`);
     },
   });
 }
@@ -423,7 +540,8 @@ export function useAddStateTransition() {
     mutationFn: async (transition: StateTransition) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.addStateTransition(sessionId, transition);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would add state transition for ${sessionId}`);
     },
   });
 }
@@ -435,7 +553,8 @@ export function useAddEventBadge() {
     mutationFn: async (badge: EventBadge) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.addEventBadge(sessionId, badge);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would add event badge for ${sessionId}`);
     },
   });
 }
@@ -447,7 +566,19 @@ export function useLogSessionEvent() {
     mutationFn: async (event: SessionEvent) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.logSessionEvent(sessionId, event);
+      
+      try {
+        // Convert null to undefined for backend compatibility
+        const backendEvent = {
+          ...event,
+          peerId: event.peerId ?? undefined,
+          severity: event.severity ?? undefined,
+        };
+        await actor.storeSessionEvent(sessionId, backendEvent);
+      } catch (error) {
+        console.error('[useQueries] Failed to log session event:', error);
+        throw error;
+      }
     },
   });
 }
@@ -459,7 +590,8 @@ export function useGetSessionDebugData() {
     mutationFn: async ({ startTime, endTime }: { startTime: bigint; endTime: bigint }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.getSessionDebugData(sessionId, startTime, endTime);
+      // Backend method not yet implemented
+      return null;
     },
   });
 }
@@ -471,7 +603,8 @@ export function useSaveUploadSpeedTestResult() {
     mutationFn: async ({ speedKbps, qualityTier }: { speedKbps: bigint; qualityTier: string }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.saveUploadSpeedTestResult(sessionId, speedKbps, qualityTier);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would save upload speed test result for ${sessionId}`);
     },
   });
 }
@@ -483,7 +616,8 @@ export function useSaveContinuousUploadMeasurement() {
     mutationFn: async ({ speedKbps, qualityTier }: { speedKbps: bigint; qualityTier: string }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.saveContinuousUploadMeasurement(sessionId, speedKbps, qualityTier);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would save continuous upload measurement for ${sessionId}`);
     },
   });
 }
@@ -495,7 +629,8 @@ export function useSaveQualityAdjustmentEvent() {
     mutationFn: async ({ fromTier, toTier, triggerSpeedKbps }: { fromTier: string; toTier: string; triggerSpeedKbps: bigint }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.saveQualityAdjustmentEvent(sessionId, fromTier, toTier, triggerSpeedKbps);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would save quality adjustment event for ${sessionId}`);
     },
   });
 }
@@ -515,7 +650,8 @@ export function useSetSafariAudioPreference() {
     }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.setSafariAudioPreference(sessionId, useSpeaker, iosDetection, compatibilityStatus);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would set Safari audio preference for ${sessionId}`);
     },
   });
 }
@@ -537,7 +673,8 @@ export function useRecordSafariAudioTest() {
     }) => {
       if (!actor) throw new Error('Actor not initialized');
       const sessionId = getSessionId();
-      return actor.recordSafariAudioTest(sessionId, testResult, useSpeaker, iosDetection, compatibilityStatus);
+      // Backend method not yet implemented
+      console.log(`[useQueries] Would record Safari audio test for ${sessionId}`);
     },
   });
 }
@@ -550,8 +687,93 @@ export function useGetSafariAudioPreference() {
     queryFn: async () => {
       if (!actor) return null;
       const sessionId = getSessionId();
-      return actor.getSafariAudioPreference(sessionId);
+      // Backend method not yet implemented
+      return null;
     },
     enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSaveLivePreview() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ roomId, image }: { roomId: RoomId; image: ExternalBlob }) => {
+      if (!actor) throw new Error('Actor not initialized');
+      
+      try {
+        await actor.storeLivePreview(roomId, image);
+      } catch (error) {
+        console.error('[useQueries] Failed to save live preview:', error);
+        throw error;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['livePreview', variables.roomId] });
+    },
+  });
+}
+
+export function useGetLatestLivePreview(roomId: RoomId) {
+  const { actor, isFetching } = useActor();
+
+  return useQuery<LobbyPreview | null>({
+    queryKey: ['livePreview', roomId],
+    queryFn: async () => {
+      if (!actor) return null;
+      
+      try {
+        const preview = await actor.getLivePreview(roomId);
+        if (preview) {
+          return {
+            roomId,
+            image: preview,
+            timestamp: BigInt(Date.now()),
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error('[useQueries] Failed to fetch live preview:', error);
+        return null;
+      }
+    },
+    enabled: !!actor && !isFetching && !!roomId,
+    refetchInterval: 30000,
+  });
+}
+
+export function useGetCallerUserProfile() {
+  const { actor, isFetching: actorFetching } = useActor();
+
+  const query = useQuery<UserProfile | null>({
+    queryKey: ['currentUserProfile'],
+    queryFn: async () => {
+      if (!actor) throw new Error('Actor not available');
+      return actor.getCallerUserProfile();
+    },
+    enabled: !!actor && !actorFetching,
+    retry: false,
+  });
+
+  return {
+    ...query,
+    isLoading: actorFetching || query.isLoading,
+    isFetched: !!actor && query.isFetched,
+  };
+}
+
+export function useSaveCallerUserProfile() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (profile: UserProfile) => {
+      if (!actor) throw new Error('Actor not initialized');
+      await actor.saveCallerUserProfile(profile);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['currentUserProfile'] });
+    },
   });
 }
