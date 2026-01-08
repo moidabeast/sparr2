@@ -1,73 +1,152 @@
 import { useState, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
-import Header from './components/Header';
-import Footer from './components/Footer';
+import { ThemeProvider } from 'next-themes';
+import { RouterProvider, createRouter, createRoute, createRootRoute, Outlet } from '@tanstack/react-router';
 import Lobby from './pages/Lobby';
 import Room from './pages/Room';
+import CategoryPage from './pages/CategoryPage';
+import type { RoomRole } from './types/backend';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 export interface RoomRef {
   handleLeave: () => Promise<void>;
 }
 
-function AppContent() {
+// Root route component
+function RootComponent() {
+  return <Outlet />;
+}
+
+// Lobby route component
+function LobbyRouteComponent() {
   const [currentView, setCurrentView] = useState<'lobby' | 'room'>('lobby');
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [currentRole, setCurrentRole] = useState<RoomRole>('spectator');
   const roomRef = useRef<RoomRef>(null);
 
-  const handleEnterRoom = (roomId: string) => {
-    setSelectedRoomId(roomId);
+  const handleEnterRoom = (roomId: string, role: RoomRole) => {
+    setCurrentRoomId(roomId);
+    setCurrentRole(role);
     setCurrentView('room');
   };
 
-  const handleBackToLobby = async () => {
-    // If we're in a room, trigger the cleanup process
-    if (currentView === 'room' && roomRef.current) {
-      await roomRef.current.handleLeave();
-    } else {
-      // Otherwise just navigate
-      setCurrentView('lobby');
-      setSelectedRoomId(null);
-    }
+  const handleBackToLobby = () => {
+    setCurrentView('lobby');
+    setCurrentRoomId(null);
+    setCurrentRole('spectator');
   };
 
-  const handleRoomLeaveComplete = () => {
-    setCurrentView('lobby');
-    setSelectedRoomId(null);
+  const handleLeaveRoom = async () => {
+    handleBackToLobby();
   };
 
   return (
+    <div className="min-h-screen">
+      {currentView === 'lobby' && (
+        <Lobby onEnterRoom={handleEnterRoom} />
+      )}
+      {currentView === 'room' && currentRoomId && (
+        <Room 
+          ref={roomRef}
+          roomId={currentRoomId} 
+          onLeave={handleLeaveRoom}
+          onBackToLobby={handleBackToLobby}
+          userRole={currentRole}
+        />
+      )}
+    </div>
+  );
+}
+
+// Category route component
+function CategoryRouteComponent() {
+  const [currentView, setCurrentView] = useState<'category' | 'room'>('category');
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [currentRole, setCurrentRole] = useState<RoomRole>('spectator');
+  const roomRef = useRef<RoomRef>(null);
+
+  const handleEnterRoom = (roomId: string, role: RoomRole) => {
+    setCurrentRoomId(roomId);
+    setCurrentRole(role);
+    setCurrentView('room');
+  };
+
+  const handleBackToCategory = () => {
+    setCurrentView('category');
+    setCurrentRoomId(null);
+    setCurrentRole('spectator');
+  };
+
+  const handleLeaveRoom = async () => {
+    handleBackToCategory();
+  };
+
+  return (
+    <>
+      {currentView === 'category' && (
+        <CategoryPage onEnterRoom={handleEnterRoom} />
+      )}
+      {currentView === 'room' && currentRoomId && (
+        <Room 
+          ref={roomRef}
+          roomId={currentRoomId} 
+          onLeave={handleLeaveRoom}
+          onBackToLobby={handleBackToCategory}
+          userRole={currentRole}
+        />
+      )}
+    </>
+  );
+}
+
+// Create root route
+const rootRoute = createRootRoute({
+  component: RootComponent,
+});
+
+// Create lobby route
+const lobbyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  component: LobbyRouteComponent,
+});
+
+// Create category route
+const categoryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/category/$categoryName',
+  component: CategoryRouteComponent,
+});
+
+// Create router
+const routeTree = rootRoute.addChildren([lobbyRoute, categoryRoute]);
+const router = createRouter({ routeTree });
+
+// Register router for type safety
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router;
+  }
+}
+
+function App() {
+  return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-      <div className="flex min-h-screen flex-col bg-background">
-        <Header onBackToLobby={currentView === 'room' ? handleBackToLobby : undefined} />
-        <main className="flex-1">
-          {currentView === 'lobby' ? (
-            <Lobby onEnterRoom={handleEnterRoom} />
-          ) : (
-            selectedRoomId && (
-              <Room
-                ref={roomRef}
-                roomId={selectedRoomId}
-                onLeave={handleRoomLeaveComplete}
-              />
-            )
-          )}
-        </main>
-        <Footer />
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
         <Toaster />
-      </div>
+      </QueryClientProvider>
     </ThemeProvider>
   );
 }
 
-export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AppContent />
-    </QueryClientProvider>
-  );
-}
-
+export default App;
