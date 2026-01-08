@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --radius: 1rem;
+        --background: 0.98 0.02 280;
+        --foreground: 0.20 0.05 280;
+        --card: 1 0.01 280;
+        --card-foreground: 0.20 0.05 280;
+        --popover: 1 0.01 280;
+        --popover-foreground: 0.20 0.05 280;
+        --primary: 0.65 0.28 300;
+        --primary-foreground: 0.99 0 0;
+        --secondary: 0.92 0.05 320;
+        --secondary-foreground: 0.25 0.08 300;
+        --muted: 0.94 0.03 300;
+        --muted-foreground: 0.55 0.05 280;
+        --accent: 0.75 0.25 340;
+        --accent-foreground: 0.99 0 0;
+        --destructive: 0.60 0.25 15;
+        --destructive-foreground: 0.99 0 0;
+        --border: 0.88 0.04 300;
+        --input: 0.88 0.04 300;
+        --ring: 0.65 0.28 300;
+        --chart-1: 0.70 0.25 340;
+        --chart-2: 0.65 0.22 280;
+        --chart-3: 0.75 0.20 200;
+        --chart-4: 0.80 0.22 50;
+        --chart-5: 0.70 0.24 30;
+        --sidebar: 0.99 0.01 280;
+        --sidebar-foreground: 0.20 0.05 280;
+        --sidebar-primary: 0.65 0.28 300;
+        --sidebar-primary-foreground: 0.99 0 0;
+        --sidebar-accent: 0.94 0.03 300;
+        --sidebar-accent-foreground: 0.25 0.08 300;
+        --sidebar-border: 0.88 0.04 300;
+        --sidebar-ring: 0.75 0.05 300;
+        --success: 0.65 0.22 150;
+        --success-foreground: 0.99 0 0;
+        --warning: 0.70 0.25 80;
+        --warning-foreground: 0.20 0.05 80;
+    }
+
+    .dark {
+        --background: 0.15 0.03 280;
+        --foreground: 0.95 0.02 280;
+        --card: 0.20 0.04 280;
+        --card-foreground: 0.95 0.02 280;
+        --popover: 0.22 0.04 280;
+        --popover-foreground: 0.95 0.02 280;
+        --primary: 0.70 0.30 300;
+        --primary-foreground: 0.98 0 0;
+        --secondary: 0.28 0.06 300;
+        --secondary-foreground: 0.95 0.02 280;
+        --muted: 0.28 0.05 280;
+        --muted-foreground: 0.65 0.05 280;
+        --accent: 0.65 0.25 320;
+        --accent-foreground: 0.98 0 0;
+        --destructive: 0.65 0.28 15;
+        --destructive-foreground: 0.98 0 0;
+        --border: 0.30 0.05 280;
+        --input: 0.30 0.05 280;
+        --ring: 0.70 0.30 300;
+        --chart-1: 0.65 0.28 320;
+        --chart-2: 0.70 0.25 280;
+        --chart-3: 0.75 0.22 200;
+        --chart-4: 0.80 0.24 50;
+        --chart-5: 0.70 0.26 30;
+        --sidebar: 0.20 0.04 280;
+        --sidebar-foreground: 0.95 0.02 280;
+        --sidebar-primary: 0.70 0.30 300;
+        --sidebar-primary-foreground: 0.98 0 0;
+        --sidebar-accent: 0.28 0.05 280;
+        --sidebar-accent-foreground: 0.95 0.02 280;
+        --sidebar-border: 0.30 0.05 280;
+        --sidebar-ring: 0.55 0.05 280;
+        --success: 0.70 0.24 150;
+        --success-foreground: 0.98 0 0;
+        --warning: 0.75 0.28 80;
+        --warning-foreground: 0.15 0.05 80;
+    }
+
+    * {
+        @apply border-border;
+    }
+    
+    body {
+        @apply bg-background text-foreground;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    }
+}
+
+/* Cute animations and effects */
+@keyframes bounce-soft {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
+}
+
+@keyframes pulse-soft {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+@keyframes wiggle {
+    0%, 100% {
+        transform: rotate(0deg);
+    }
+    25% {
+        transform: rotate(-3deg);
+    }
+    75% {
+        transform: rotate(3deg);
+    }
+}
+
+.animate-bounce-soft {
+    animation: bounce-soft 2s ease-in-out infinite;
+}
+
+.animate-pulse-soft {
+    animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-wiggle {
+    animation: wiggle 0.5s ease-in-out;
+}
+
+/* Smooth transitions */
+* {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+}
+
+/* Cute hover effects */
+.hover-lift {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.hover-lift:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+/* Rounded corners everywhere for cute design */
+.rounded-cute {
+    border-radius: 1.5rem;
+}
+
+/* Glass morphism effect */
+.glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+

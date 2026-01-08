@@ -1,0 +1,1381 @@
+# Chattr   4chan style Imageboard with Live Communication
+
+## Overview
+Chattr is an imageboard application that allows users to create and join rooms for text, audio, and video communication. The application features a lobby system where users can browse available rooms and create new ones. Users are identified by anonymous 8-character alphanumeric session IDs generated in the browser. The application features a cute, fun, and mobile-first design with cohesive styling across all interfaces.
+
+## Core Features
+
+### Anonymous Session System
+- Generate random 8-character alphanumeric session ID when user first visits the application
+- Store session ID locally in the browser for the duration of the session
+- Use session ID for all user identification throughout the application
+- No authentication or login required
+
+### Lobby System
+- Display a grid view of all available rooms with cute, mobile-first design
+- Each room card shows:
+  - Subject/title
+  - Description
+  - Thumbnail image
+  - Number of active participants
+- Real-time updates when new rooms are created or participant counts change
+- **Edge Caching for Lobby Performance**: Implement edge caching for lobby images and metadata to improve loading performance and reduce bandwidth usage
+
+### Room Creation
+- Form interface for creating new rooms with cute, mobile-optimized design:
+  - Subject field (required)
+  - Description field (required)
+  - Image upload for room thumbnail
+- Newly created rooms appear immediately in the lobby
+
+### Room Communication
+- **Text Chat**: Real-time messaging using canister messages with fun, mobile-first chat interface
+- **WebRTC Audio/Video**: Peer-to-peer audio and video communication with reliable signaling and automatic reconnection
+- Clean chat interface with message history and cute styling
+- Participant list showing active users by their session IDs
+- **Connected Users List**: Display all currently connected users in the active room using their anonymous 8-character session IDs, with live updates as users join or leave
+- **Intelligent Video Layout Scaling**: Implement dynamic video grid layout that automatically adjusts based on the number of participants and screen size for optimal viewing experience, with active speaker highlighting and responsive mobile-first design
+
+### Background Session Management
+- **Tab Visibility Handling**: When users switch tabs or the page loses focus, maintain room connection and presence without triggering disconnection
+- **Active Session Heartbeat**: Implement heartbeat mechanism to maintain active session status while tab is in background
+- **Resource Conservation**: Pause or reduce stream activity when tab is backgrounded to conserve resources while preserving room connection
+- **Presence Preservation**: Keep users in connected users list and active peers when tab is backgrounded or loses focus
+- **Selective Disconnection**: Only trigger full disconnects when browser tab is closed, refreshed, or user explicitly navigates away from chatroom
+- **Background Stream Management**: Manage WebRTC streams appropriately during background state without dropping peer connections
+
+### Ghost User Prevention System
+- **Backend Heartbeat Timeout Cleanup**: Automatically remove inactive users from active peers lists based on heartbeat timeout (30-60 seconds)
+- **Frontend Unload Detection**: Detect browser tab closure, navigation, and page reload events to trigger immediate cleanup
+- **Selective Event Handling**: Distinguish between tab backgrounding and actual departure to prevent false disconnections
+- **Automatic Stale Session Removal**: Clean up ghost users who remain in active peers after network issues or improper disconnection
+
+### Mobile Audio Output Controls
+- **Chrome/Android setSinkId() Support**: Implement audio output device selection for Chrome on Android devices
+- **Earpiece/Loudspeaker Toggle**: Provide toggle button allowing users to switch between earpiece and loudspeaker output
+- **Audio Device Detection**: Detect available audio output devices and provide selection interface
+- **Mobile Audio Routing**: Enable proper audio routing control on Android devices using setSinkId() API
+- **Cross-Platform Audio Management**: Coordinate mobile audio controls with existing WebRTC audio management
+
+### Safari Audio Output Toggle for iOS
+- **iOS Safari Detection**: Detect Safari browser on iOS devices where `setSinkId()` is unavailable for audio output control
+- **Speaker Toggle UI**: Display a "Use Speaker" button in the call interface when Safari/iOS is detected with cute, consistent styling
+- **Audio Routing Control**: When users tap the "Use Speaker" button, route audio through a standard HTML audio element to force playback through the device's loudspeaker instead of earpiece
+- **Audio Element Management**: Create and manage dedicated HTML audio elements for remote peer audio streams to enable speaker routing on iOS Safari
+- **Toggle State Management**: Maintain toggle state (speaker/earpiece) and provide visual feedback for current audio output mode
+- **Seamless Integration**: Integrate Safari audio toggle with existing WebRTC audio management without disrupting other browser functionality
+- **Consistent iOS Functionality**: Ensure Safari speaker toggle works correctly and consistently across all iOS devices with proper testing and verification
+
+### Stream Reconnect Logic
+- **Robust Recovery System**: Implement comprehensive stream recovery to prevent users from being dropped during network issues or camera restarts
+- **Automatic ICE Restarts**: Trigger automatic ICE restart when connection issues are detected
+- **Track Reattachment**: Automatically reattach media tracks when streams are recovered
+- **Network Condition Monitoring**: Monitor network conditions and proactively handle connection degradation
+- **Camera Restart Recovery**: Handle camera restart scenarios without dropping the user from the room
+- **Connection State Recovery**: Maintain peer connections during temporary network interruptions
+- **Graceful Reconnection**: Ensure smooth reconnection process without disrupting other participants
+
+### Pre-Stream Upload Speed Testing
+- **Automatic Upload Speed Test**: Before enabling camera/video streaming, automatically run a pre-stream upload speed test using WebRTC `getStats()` API
+- **Temporary Peer Connection**: Create a temporary peer connection to measure average outgoing bitrate over a few seconds
+- **Upload Speed Calculation**: Calculate available upload speed in kbps based on measured bitrate statistics
+- **Quality Gating System**: Apply threshold-based quality restrictions based on measured upload speed:
+  - < 300 kbps → Block streaming entirely with message "Your connection is too slow to stream"
+  - 300–800 kbps → Set very low quality (144p–160p) with warning notification
+  - 800–1500 kbps → Set low quality (240p–360p)
+  - 1500–3000 kbps → Set medium quality (480p–720p)
+  - > 3000 kbps → Allow high quality (720p–1080p)
+
+### Dynamic Quality Adjustment During Streaming
+- **Continuous Upload Monitoring**: Monitor upload bitrate continuously using `getStats()` every few seconds during active streaming
+- **Automatic Quality Downgrade**: If upload speed drops below current quality tier threshold, automatically lower video resolution
+- **Real-time Warning System**: Display visible warnings via toast notifications when quality is automatically adjusted due to low upload speed
+- **Quality Tier Management**: Maintain current quality tier state and prevent streaming above measured upload capacity
+
+### Full Mesh Renegotiation System
+- **Automatic Peer Synchronization**: When any participant joins or leaves a room, all existing peers automatically renegotiate and synchronize offers/answers with every other participant
+- **Complete Mesh Connectivity**: Ensure no peers are skipped in the negotiation graph — the full mesh always connects all users currently in the room
+- **Dynamic Connection Management**: Peer connections are created, updated, or cleaned up dynamically without requiring reloads or manual reconnects
+- **Fallback Retry Logic**: Implement retry mechanisms for any missed renegotiations to handle late joiners gracefully
+- **Coordinated Renegotiation**: All peers participate in synchronized renegotiation when room membership changes
+- **Connection State Synchronization**: Maintain consistent connection state across all peers during renegotiation events
+
+### Advanced WebRTC Debug Panel
+- Compact floating overlay panel displaying comprehensive real-time WebRTC connection information with cute, mobile-first design
+- Shows current peer connections with their session IDs
+- Displays signaling message status and connection states
+- Visual indicators for local and remote media streams
+- Shows active peers with number of remote tracks received per peer
+- Real-time status updates including "Connected", "Awaiting offer", "Receiving stream"
+- Auto-updates as connection state or peers change
+- Toggleable visibility for debugging purposes
+- **Advanced Mobile Connection Diagnostics**: Enhanced debug panel displays for mobile connection troubleshooting:
+  - **TURN Allocation Status Display**: Show real-time TURN server allocation status, success/failure rates, and retry attempts
+  - **ICE Failure Code Monitoring**: Display specific ICE failure codes (403, 437, 486) with detailed error descriptions and recovery status
+  - **Mobile Network Type Detection**: Show detected mobile network type (3G, 4G, 5G) and connection quality metrics
+  - **Connection Retry Analytics**: Display retry attempt counts, success rates, and failure patterns for mobile connections
+  - **TURN Server Response Codes**: Show detailed TURN server response codes and allocation failure reasons
+  - **Mobile-Specific Error Recovery**: Display mobile connection error recovery attempts and success indicators
+- **ICE Candidate Tracking**: Display ICE candidate count and connection state changes for network traversal verification
+- **Enhanced Debug Logging**: Show detailed ICE candidate exchange status and connection progression
+- **TURN Relay Indicators**: Display when TURN relay server is being used for connection establishment
+- **Reconnection Status**: Display reconnection attempts, stream recovery actions, and track status ("active", "recovering", "stalled")
+- **Adaptive Quality Monitoring**: Display current bitrate, resolution, and packet loss statistics for each peer connection
+- **Network Statistics Display**: Show real-time RTCP bandwidth measurements and adaptive quality adjustments
+- **Video Track Revalidation Status**: Display video stream health monitoring status, including "Video OK", "Video Stalled - Restarting", "Camera Restarting", and recovery progress indicators
+- **Dynamic ICE Policy Display**: Show current ICE policy mode ("direct", "relay-only") for each peer connection with real-time updates when policy switches occur
+- **Network Path Probing Results**: Display network path probing results including UDP/TCP latency measurements, packet loss detection, and selected optimal route for each peer connection
+- **Advanced Per-Peer Metrics**: Real-time display of detailed connection metrics for each peer:
+  - Bitrate (incoming/outgoing audio and video)
+  - Packet loss percentage
+  - Jitter measurements in milliseconds
+  - Round-trip latency
+  - Connection retry counts and attempt history
+- **ICE Candidate Type Analysis**: Display and categorize ICE candidates by type:
+  - Host candidates (local network addresses)
+  - Server reflexive (srflx) candidates (public IP via STUN)
+  - Relay candidates (TURN server addresses)
+  - Real-time updates as candidates are gathered and selected
+- **Detailed Connection State Transitions**: Track and display complete ICE connection lifecycle:
+  - New → Checking → Connected → Failed state progression
+  - Timestamps for each state transition
+  - Visual timeline of connection establishment process
+- **Event Badge System**: Visual indicators and badges for key WebRTC events:
+  - "Track Started" badge when media tracks begin
+  - "Track Ended" badge when media tracks stop
+  - "Renegotiation Initiated" badge during connection renegotiation
+  - "TURN Relay Active" badge when using relay server
+  - "Revalidation Success/Failure" badges for stream recovery attempts
+  - **TURN Retry Events**: "TURN Retry" badge when TURN allocation fails and retry is attempted
+  - **TCP Fallback Events**: "TCP Fallback" badge when switching from UDP to TCP for TURN connections
+  - **Error Recovery Events**: "Error Recovery" badge when recovering from ICE/TURN failures (403, 437, 486 errors)
+  - **Renegotiation Events**: "Full Mesh Sync" badge when room-wide renegotiation is triggered
+- **Session Event Logging**: Comprehensive logging system that captures:
+  - All connection events with timestamps
+  - State transitions and their triggers
+  - Performance metrics over time
+  - Error events and recovery actions
+  - ICE candidate selection history
+  - **TURN Retry Attempts**: Log TURN allocation failures and retry attempts with fresh credentials
+  - **TCP Fallback Events**: Log UDP to TCP fallback attempts and success/failure status
+  - **Error Recovery Actions**: Log specific error codes (403, 437, 486) and recovery attempts
+  - **Renegotiation Events**: Log full mesh renegotiation triggers and completion status
+- **Exportable Debug Data**: Generate downloadable JSON session logs containing:
+  - Complete event timeline for the session
+  - All connection states and transitions
+  - Performance metrics history
+  - Error logs and recovery attempts
+  - Network statistics and quality adjustments
+  - Peer connection lifecycle data
+  - **TURN Connection Analytics**: TURN retry statistics, TCP fallback usage, and error recovery success rates
+  - **Renegotiation Analytics**: Full mesh renegotiation frequency, success rates, and timing data
+- **Network Change Detection Status**: Display network change detection events and automatic reconnection status:
+  - Current network connection type (Wi-Fi, cellular, ethernet)
+  - Network change event timestamps
+  - Automatic reconnection progress during network switches
+  - ICE restart status and success indicators
+  - Session preservation status during network transitions
+- **Enhanced Mobile Network Monitoring**: Display mobile-specific connection quality metrics:
+  - Mobile network type detection (3G, 4G, 5G, Wi-Fi)
+  - Dynamic retry threshold adjustments for mobile networks
+  - Mobile-optimized reconnection throttling status
+  - Network switching detection and graceful reconnection flow
+- **Advanced Streaming Optimization Metrics**: Display real-time streaming adaptation states:
+  - **Simulcast/SVC Layer Status**: Show active video quality layers (low, medium, high) and current layer selection per peer
+  - **Audio Priority Indicators**: Display audio transport priority status and congestion handling state
+  - **Dynamic Frame Rate Display**: Show current FPS and adaptive frame rate limiting status under network strain
+  - **Keyframe Request Status**: Display keyframe request events and optimization triggers
+  - **Bandwidth Estimation Metrics**: Show Google Congestion Control feedback and live network pacing metrics
+  - **Stream Adaptation Events**: Display real-time notifications when quality layers switch or frame rates adjust
+- **Upload Speed Test Monitoring**: Display pre-stream and continuous upload speed test results:
+  - Current measured upload speed in kbps
+  - Quality tier assignments based on upload speed thresholds
+  - Upload speed test progress and completion status
+  - Historical upload speed measurements and trends
+  - Quality adjustment events triggered by upload speed changes
+- **Background Session Status**: Display background session management status:
+  - Tab visibility state and background session indicators
+  - Heartbeat status and session preservation state
+  - Background stream management status and resource conservation indicators
+  - Presence maintenance status during tab switching
+- **Renegotiation Status Display**: Display full mesh renegotiation monitoring:
+  - Active renegotiation events and progress indicators
+  - Peer synchronization status during room membership changes
+  - Renegotiation retry attempts and success rates
+  - Connection graph completeness indicators
+- **Ghost User Prevention Status**: Display ghost user prevention system status:
+  - Heartbeat timeout monitoring and cleanup events
+  - Unload detection status and cleanup triggers
+  - Stale session removal events and timing
+  - Active session validation and timeout tracking
+
+## Backend Requirements
+
+### Data Storage
+- Store room information including:
+  - Room ID, subject, description
+  - Uploaded thumbnail images
+  - Creation timestamp
+  - Active participant count
+- Store chat messages for each room with associated session IDs
+- Maintain active peers list per room with session IDs
+- Store active session IDs for each room to track current participants
+- **Network Quality Metrics**: Store and track network quality statistics per session ID including connection type detection (mobile vs desktop) for adaptive routing decisions
+- **ICE Policy Tracking**: Store ICE policy preferences and connection success rates per session ID to inform dynamic policy adjustments
+- **Network Path Statistics**: Store network path probing results including UDP/TCP latency measurements and packet loss statistics per session ID for optimal route selection
+- **Advanced Connection Metrics Storage**: Store detailed per-peer connection metrics:
+  - Historical bitrate, packet loss, jitter, and latency data
+  - Connection retry counts and success rates
+  - ICE candidate type usage statistics
+  - Connection state transition logs with timestamps
+- **Session Event Logging**: Store comprehensive session event logs including:
+  - WebRTC connection events and state changes
+  - Media track lifecycle events
+  - Network quality changes and adaptations
+  - Error events and recovery actions
+  - Performance metrics over time
+- **Network Change Event Storage**: Store network change detection events and reconnection attempts:
+  - Network transition timestamps and types
+  - ICE restart events and success rates
+  - Session preservation status during network changes
+  - Connection recovery metrics per network change event
+- **TURN Connection Analytics Storage**: Store TURN-specific connection data:
+  - TURN allocation success/failure rates per session ID
+  - UDP vs TCP TURN usage statistics
+  - TURN retry attempt counts and success rates
+  - Error recovery statistics for specific error codes (403, 437, 486)
+  - Fresh credential generation timestamps and usage
+- **Mobile Network Optimization Data**: Store mobile-specific connection metrics:
+  - Mobile network type detection results (3G, 4G, 5G)
+  - Dynamic retry threshold adjustments per mobile network type
+  - Mobile reconnection success rates and timing data
+  - Network switching patterns and graceful reconnection metrics
+- **Advanced Streaming Optimization Data**: Store streaming adaptation metrics and preferences:
+  - **Simulcast/SVC Layer Usage**: Store quality layer selection patterns and adaptation triggers per session ID
+  - **Audio Priority Metrics**: Store audio transport priority effectiveness and congestion handling statistics
+  - **Frame Rate Adaptation Data**: Store dynamic frame rate limiting events and network strain correlation data
+  - **Keyframe Optimization Statistics**: Store keyframe request patterns and optimization effectiveness metrics
+  - **Bandwidth Estimation History**: Store Google Congestion Control feedback data and network pacing statistics per session ID
+- **Upload Speed Test Data**: Store upload speed test results and quality management data:
+  - Pre-stream upload speed test results per session ID
+  - Continuous upload speed monitoring data during streaming
+  - Quality tier assignments and adjustment history
+  - Upload speed threshold compliance and violation events
+  - Quality downgrade events and user notification history
+- **Mobile Audio Output Preferences**: Store mobile audio output preferences per session ID:
+  - Audio output device selection (earpiece/loudspeaker) for Chrome/Android
+  - setSinkId() device preferences and compatibility data
+  - Mobile audio routing effectiveness and user preferences
+- **Safari Audio Output Preferences**: Store iOS Safari audio output preferences per session ID:
+  - Speaker/earpiece toggle state preferences
+  - Audio routing method selection history
+  - iOS device detection and compatibility data
+- **Stream Recovery Data**: Store stream reconnection and recovery metrics:
+  - ICE restart events and success rates per session ID
+  - Track reattachment success and failure statistics
+  - Network condition recovery patterns and effectiveness
+  - Camera restart recovery metrics and user impact data
+- **Background Session Data**: Store background session management information:
+  - Tab visibility state changes and timestamps per session ID
+  - Heartbeat activity and session preservation events
+  - Background stream management actions and resource conservation metrics
+  - Presence maintenance status during tab switching events
+- **Renegotiation Analytics Storage**: Store full mesh renegotiation data:
+  - Room-wide renegotiation events and triggers per room ID
+  - Renegotiation completion rates and timing metrics
+  - Peer synchronization success rates during membership changes
+  - Renegotiation retry attempts and fallback statistics
+- **Ghost User Prevention Data**: Store ghost user prevention system metrics:
+  - Heartbeat timeout events and cleanup actions per session ID
+  - Unload detection events and cleanup triggers
+  - Stale session removal statistics and timing data
+  - Session validation events and timeout tracking
+
+### Edge Caching Infrastructure
+- **Lobby Image Caching**: Implement edge caching for room thumbnail images to reduce loading times and bandwidth usage
+- **Metadata Caching**: Cache room metadata (titles, descriptions, participant counts) at edge locations for faster lobby loading
+- **Cache Invalidation**: Provide mechanisms to invalidate cached data when rooms are updated or deleted
+- **CDN Integration**: Integrate with content delivery network for global edge caching distribution
+- **Gallery Image Caching**: Extend edge caching to support gallery and thumbnail images across the application
+- **Performance Optimization**: Optimize cache hit rates and reduce bandwidth consumption for image assets
+
+### Room Management
+- Provide reliable room existence validation before allowing joins
+- Return detailed room information including current state and participant data
+- Handle room join requests with proper validation and error responses
+- Provide clear error messages for non-existent rooms or join failures
+- Support room information retrieval by room ID for pre-join validation
+- **Idempotent Room Operations**: Implement `joinRoom(roomId, sessionId)` and `leaveRoom(roomId, sessionId)` endpoints that handle duplicate calls gracefully:
+  - `joinRoom` should not add duplicate session IDs to active peers list
+  - `leaveRoom` should not error if session ID is not in active peers list
+  - Both operations should return success status regardless of current state
+- **Debounced Presence Updates**: Implement server-side debouncing for presence updates to prevent rapid join/leave cycles from the same session ID within a short time window (e.g., 2-3 seconds)
+- **Connection Type Detection**: Detect and store connection type (mobile/desktop) for each session ID to enable prioritized TURN relay routing
+- **Network Change Resilient Operations**: Ensure room operations remain stable during network transitions:
+  - Maintain session presence during temporary network disconnections
+  - Handle reconnection attempts without creating duplicate entries
+  - Preserve room membership across network change events
+- **Background Session Tolerance**: Handle background session management without triggering disconnection:
+  - Maintain session presence when tab loses focus or is backgrounded
+  - Support heartbeat mechanisms to preserve active session status
+  - Distinguish between tab backgrounding and actual disconnection events
+  - Preserve room membership during tab visibility changes
+- **Renegotiation Trigger Management**: Handle room membership change events that trigger full mesh renegotiation:
+  - Broadcast renegotiation signals when users join or leave rooms
+  - Coordinate renegotiation events across all active peers
+  - Track renegotiation completion and retry failed attempts
+  - Maintain renegotiation state during membership transitions
+
+### Session Heartbeat Management
+- **Heartbeat Endpoint**: Provide `updateHeartbeat(sessionId, roomId)` endpoint to maintain active session status
+- **Heartbeat Tracking**: Store last heartbeat timestamp per session ID to track session activity
+- **Background Session Support**: Maintain session presence for backgrounded tabs with active heartbeat
+- **Heartbeat Timeout Configuration**: Configure appropriate timeout thresholds for heartbeat expiration
+- **Session Cleanup Logic**: Only remove sessions from active peers after heartbeat timeout expires
+- **Heartbeat Status Reporting**: Provide heartbeat status information for session monitoring
+- **Automatic Heartbeat Timeout Cleanup**: Implement scheduled cleanup process that regularly checks all active sessions:
+  - Run cleanup process every 15-30 seconds to check heartbeat timestamps
+  - Remove sessions from active peers lists if last heartbeat exceeds timeout threshold (30-60 seconds)
+  - Update room participant counts after removing timed-out sessions
+  - Log heartbeat timeout cleanup events for monitoring and debugging
+  - Broadcast room membership changes to trigger renegotiation after cleanup
+
+### WebRTC Signaling
+- Act as signaling server for WebRTC connections with proper message routing
+- Handle exchange of signaling messages between specific session IDs:
+  - WebRTC offers with sender and target session IDs
+  - WebRTC answers with sender and target session IDs
+  - ICE candidates with sender and target session IDs
+- Store signaling messages temporarily for retrieval by target session IDs
+- Provide reliable message delivery and retrieval mechanisms
+- Clean up signaling messages after successful delivery or timeout
+- Manage peer connection establishment between users identified by session IDs
+- Provide `getSignalingMessages` endpoint to retrieve pending messages for a session ID
+- Provide `sendSignalingMessage` endpoint to send messages to specific target session IDs
+- Provide `clearSignalingMessages` endpoint to remove processed messages
+- Maintain and provide active peers list per room for WebRTC peer discovery
+- **Network Quality Signaling**: Handle exchange of network quality metrics and adaptive bitrate adjustment signals between peers
+- **TURN Relay Prioritization**: Store and communicate TURN relay preference flags for mobile or unstable connections
+- **ICE Policy Coordination**: Handle exchange of ICE policy adjustment signals and connection success metrics between peers
+- **Network Path Probing Coordination**: Store and exchange network path probing results including UDP/TCP latency and packet loss measurements between peers
+- **Advanced Metrics Signaling**: Handle exchange of detailed connection metrics including:
+  - Real-time bitrate, packet loss, jitter, and latency measurements
+  - ICE candidate type information and selection results
+  - Connection state transition notifications
+  - Event logging data for cross-peer analysis
+- **Network Change Signaling**: Handle signaling for network change events and reconnection coordination:
+  - ICE restart signaling messages for network transitions
+  - Network change notification between peers
+  - Reconnection status updates during network switches
+  - Session preservation signals to maintain room membership
+- **TURN Retry Coordination**: Handle signaling for TURN connection retry and fallback mechanisms:
+  - TURN allocation failure notifications between peers
+  - Fresh credential distribution for TURN retry attempts
+  - TCP fallback coordination signals
+  - Error recovery status updates for ICE/TURN failures
+- **Advanced Streaming Optimization Signaling**: Handle exchange of streaming adaptation signals:
+  - **Simulcast/SVC Layer Coordination**: Exchange quality layer preferences and adaptation triggers between peers
+  - **Audio Priority Signaling**: Coordinate audio transport priority and congestion handling between peers
+  - **Frame Rate Adaptation Signals**: Exchange dynamic frame rate limiting status and network strain indicators
+  - **Keyframe Request Coordination**: Handle keyframe request optimization signals between peers
+  - **Bandwidth Estimation Sharing**: Exchange Google Congestion Control feedback and network pacing data between peers
+- **Upload Speed Test Coordination**: Handle signaling for upload speed testing and quality management:
+  - Exchange upload speed test results between peers
+  - Coordinate quality tier assignments and adjustments
+  - Share upload speed threshold compliance status
+  - Distribute quality downgrade notifications and warnings
+- **Mobile Audio Output Signaling**: Handle signaling for mobile audio output coordination:
+  - Exchange audio output device preferences between peers
+  - Coordinate earpiece/loudspeaker toggle states for Chrome/Android
+  - Share mobile audio device detection and compatibility information
+- **Safari Audio Output Signaling**: Handle signaling for iOS Safari audio output coordination:
+  - Exchange audio routing preferences between peers
+  - Coordinate speaker/earpiece toggle states
+  - Share iOS device detection and compatibility information
+- **Stream Recovery Signaling**: Handle signaling for stream reconnection and recovery:
+  - ICE restart coordination between peers during network issues
+  - Track reattachment signaling and status updates
+  - Stream recovery progress notifications between peers
+  - Camera restart coordination and recovery status sharing
+- **Background Session Signaling**: Handle signaling for background session management:
+  - Exchange tab visibility state changes between peers
+  - Coordinate background stream management actions
+  - Share heartbeat status and session preservation information
+  - Distribute background session status updates
+- **Full Mesh Renegotiation Signaling**: Handle signaling for coordinated room-wide renegotiation:
+  - Broadcast renegotiation triggers when room membership changes
+  - Coordinate synchronized offer/answer exchanges across all peers
+  - Handle renegotiation retry signals for missed connections
+  - Distribute renegotiation completion status across all participants
+  - Manage renegotiation state synchronization between all active peers
+
+### Active Peers Management
+- Store active session IDs per room when users join
+- Broadcast session ID to backend when user joins a room
+- Provide `getActivePeers` endpoint to retrieve list of active session IDs for a room
+- Remove session IDs from active peers list when users leave rooms or close sessions
+- Update active participant counts in real-time based on peers list
+- **Stale Session Cleanup**: Automatically remove inactive session IDs from active peers list to prevent ghost connections
+- **Real-time Peer Updates**: Provide immediate updates when peers join or leave to enable dynamic peer synchronization
+- **Stable Presence Tracking**: Maintain session presence across page reloads and component re-mounts without automatically removing users
+- **Graceful Re-join Handling**: Allow session IDs to rejoin rooms without being marked as duplicate or causing presence flickering
+- **Network Quality Tracking**: Store and provide network quality metrics per session ID for adaptive routing decisions
+- **Network Change Resilient Presence**: Maintain active peer status during network transitions:
+  - Preserve session presence during temporary network disconnections
+  - Handle network change events without removing users from active peers
+  - Support graceful reconnection after network switches
+  - Prevent ghost sessions during network transitions
+- **Heartbeat-Based Presence**: Integrate heartbeat mechanism with active peers management:
+  - Maintain session presence based on heartbeat activity rather than continuous connection
+  - Only remove sessions from active peers after heartbeat timeout
+  - Support background session preservation through heartbeat maintenance
+  - Distinguish between backgrounded sessions and disconnected sessions
+- **Renegotiation Event Broadcasting**: Broadcast room membership changes to trigger full mesh renegotiation:
+  - Notify all active peers when new users join the room
+  - Notify all active peers when users leave the room
+  - Coordinate renegotiation events across all participants
+  - Track renegotiation completion across all peer connections
+- **Automated Ghost User Cleanup**: Implement automatic cleanup of inactive sessions:
+  - Regularly check heartbeat timestamps for all active sessions
+  - Remove sessions that exceed heartbeat timeout threshold
+  - Update room participant counts after cleanup
+  - Broadcast membership changes after ghost user removal
+
+### Upload Speed Test Management
+- **Pre-Stream Test Coordination**: Provide endpoints to coordinate pre-stream upload speed testing:
+  - Store upload speed test results per session ID
+  - Determine quality tier assignments based on measured upload speeds
+  - Provide quality threshold validation and enforcement
+- **Continuous Monitoring Support**: Support ongoing upload speed monitoring during streaming:
+  - Store continuous upload speed measurements per session ID
+  - Track quality adjustment events and downgrade triggers
+  - Maintain quality tier compliance history
+- **Quality Management Operations**: Handle quality tier management and enforcement:
+  - Validate streaming permissions based on upload speed thresholds
+  - Store quality downgrade events and user notifications
+  - Provide quality tier status and adjustment history per session ID
+
+### Mobile Audio Output Management
+- **Mobile Device Detection**: Store and track mobile device detection results per session ID
+- **Audio Output Device Preferences**: Store user audio output device preferences (earpiece/loudspeaker) per session ID for Chrome/Android
+- **setSinkId() Compatibility Tracking**: Track setSinkId() API availability and compatibility per session ID
+- **Mobile Audio Routing State**: Maintain audio routing state and device selection history for mobile users
+
+### Safari Audio Output Management
+- **iOS Device Detection**: Store and track iOS Safari device detection results per session ID
+- **Audio Output Preferences**: Store user audio output preferences (speaker/earpiece) per session ID
+- **Audio Routing State**: Maintain audio routing state and toggle history for iOS Safari users
+- **Compatibility Tracking**: Track Safari audio output compatibility and functionality per session ID
+
+### Stream Recovery Management
+- **Recovery Event Tracking**: Store and track stream recovery events per session ID:
+  - ICE restart triggers and success rates
+  - Track reattachment events and outcomes
+  - Network condition recovery patterns
+  - Camera restart recovery metrics
+- **Recovery Coordination**: Coordinate stream recovery between peers:
+  - Manage recovery signaling and status updates
+  - Track recovery progress and completion
+  - Store recovery effectiveness metrics
+
+### Renegotiation Management
+- **Room-Wide Renegotiation Coordination**: Manage full mesh renegotiation events:
+  - Track room membership changes that trigger renegotiation
+  - Coordinate synchronized renegotiation across all active peers
+  - Store renegotiation event timestamps and completion status
+  - Handle renegotiation retry logic for failed attempts
+- **Renegotiation State Management**: Maintain renegotiation state per room:
+  - Track active renegotiation events and participants
+  - Monitor renegotiation completion across all peer connections
+  - Store renegotiation success rates and timing metrics
+  - Provide renegotiation status for debugging and monitoring
+
+### Core Operations
+- Create new rooms (using session ID as creator identifier)
+- Retrieve room list for lobby
+- Validate room existence and return room details before join attempts
+- Join/leave rooms using session IDs (update participant counts and active peers list)
+- Add session ID to active peers list when joining room (idempotent operation)
+- Remove session ID from active peers list when leaving room (idempotent operation)
+- Retrieve active peers list for a specific room with current timestamp for synchronization
+- Send/receive text messages with session ID attribution
+- Send signaling messages with proper sender/target session ID routing
+- Retrieve signaling messages for specific session IDs
+- Clear processed signaling messages to prevent reprocessing
+- Clean up signaling data and remove from active peers when users leave rooms
+- **Network Quality Operations**: Store and retrieve network quality metrics, connection type detection, and TURN relay preferences per session ID
+- **ICE Policy Management**: Store and retrieve ICE policy preferences and connection success rates per session ID
+- **Network Path Analytics**: Store and retrieve network path probing results and optimal route selections per session ID
+- **Advanced Metrics Operations**: Store and retrieve detailed connection metrics including bitrate, packet loss, jitter, latency, and retry counts per session ID
+- **Session Event Management**: Store, retrieve, and export comprehensive session event logs with filtering and aggregation capabilities
+- **Debug Data Export**: Provide endpoint to generate and download complete session debug data in JSON format
+- **Network Change Operations**: Handle network change detection and reconnection coordination:
+  - Store network change events and reconnection attempts
+  - Coordinate ICE restart signaling between peers
+  - Maintain session state during network transitions
+  - Provide network change status and recovery metrics
+- **TURN Connection Management**: Handle TURN-specific connection operations:
+  - Store TURN allocation success/failure statistics per session ID
+  - Manage fresh credential generation for TURN retry attempts
+  - Track UDP vs TCP TURN usage patterns
+  - Store error recovery statistics for specific error codes
+- **Mobile Network Operations**: Handle mobile-specific network optimization:
+  - Store mobile network type detection results
+  - Manage dynamic retry threshold adjustments
+  - Track mobile reconnection patterns and success rates
+  - Coordinate network switching and graceful reconnection flows
+- **Advanced Streaming Optimization Operations**: Handle streaming adaptation data and coordination:
+  - **Simulcast/SVC Management**: Store and retrieve quality layer usage patterns and adaptation preferences per session ID
+  - **Audio Priority Operations**: Store and retrieve audio transport priority effectiveness metrics per session ID
+  - **Frame Rate Adaptation Management**: Store and retrieve dynamic frame rate limiting patterns and network correlation data per session ID
+  - **Keyframe Optimization Operations**: Store and retrieve keyframe request optimization statistics and effectiveness metrics per session ID
+  - **Bandwidth Estimation Operations**: Store and retrieve Google Congestion Control feedback data and network pacing statistics per session ID
+- **Upload Speed Test Operations**: Handle upload speed testing and quality management:
+  - Store and retrieve upload speed test results per session ID
+  - Manage quality tier assignments and threshold enforcement
+  - Track quality adjustment events and user notifications
+  - Provide upload speed monitoring and compliance reporting
+- **Mobile Audio Output Operations**: Handle mobile audio output management:
+  - Store and retrieve audio output device preferences per session ID
+  - Manage earpiece/loudspeaker toggle state for Chrome/Android
+  - Track mobile audio device compatibility and routing effectiveness
+- **Safari Audio Output Operations**: Handle iOS Safari audio output management:
+  - Store and retrieve audio output preferences per session ID
+  - Manage speaker/earpiece toggle state
+  - Track iOS device compatibility and audio routing effectiveness
+- **Stream Recovery Operations**: Handle stream reconnection and recovery:
+  - Store and retrieve stream recovery events and metrics per session ID
+  - Coordinate ICE restart and track reattachment operations
+  - Manage recovery signaling and progress tracking
+  - Provide recovery effectiveness analytics and reporting
+- **Edge Cache Operations**: Handle edge caching for lobby performance:
+  - Cache and serve room thumbnail images from edge locations
+  - Cache room metadata for faster lobby loading
+  - Invalidate cached data when rooms are updated
+- **Background Session Operations**: Handle background session management:
+  - Process heartbeat updates and maintain session activity status
+  - Manage background session preservation and resource conservation
+  - Track tab visibility changes and session state transitions
+  - Coordinate background session status with active peers management
+- **Full Mesh Renegotiation Operations**: Handle coordinated room-wide renegotiation:
+  - Trigger renegotiation events when room membership changes
+  - Coordinate synchronized renegotiation across all active peers
+  - Track renegotiation completion and retry failed attempts
+  - Store renegotiation analytics and performance metrics
+  - Provide renegotiation status and debugging information
+- **Ghost User Prevention Operations**: Handle ghost user prevention system:
+  - Execute scheduled heartbeat timeout cleanup processes
+  - Process unload detection cleanup requests
+  - Track and log ghost user removal events
+  - Provide ghost user prevention status and metrics
+
+## Frontend Requirements
+
+### UI Components and Design System
+- **Cute, Fun, and Mobile-First Design**: Apply cohesive visual design across the entire application with:
+  - Playful color palette with soft, rounded corners and friendly typography
+  - Mobile-optimized layouts with touch-friendly button sizes and spacing
+  - Consistent design language across lobby, room, chat, and debug interfaces
+  - Structured layout hierarchy with clear visual organization
+  - Responsive design that works seamlessly across all device sizes
+  - Fun animations and micro-interactions to enhance user experience
+- Modern, clean interface using React and Tailwind CSS with cute styling
+- Responsive grid layout for lobby with mobile-first approach
+- Chat interface with message input and history featuring fun, engaging design
+- Room creation form with image upload and mobile-optimized layout
+- Audio/video controls for WebRTC with cute, intuitive design
+- Display session ID in user interface for identification with friendly styling
+- Dynamic video grid displaying all connected peer streams with intelligent layout
+- Advanced WebRTC debug panel as floating overlay with toggle functionality and cute design
+- **Connected Users List Component**: Side panel or overlay displaying all currently connected users in the active room using their session IDs, with automatic live updates as users join or leave, featuring cute mobile-first design
+- **Intelligent Video Layout Component**: Dynamic video grid that automatically adjusts layout based on participant count and screen dimensions for optimal viewing experience, with active speaker highlighting and mobile-responsive design
+- **Upload Speed Test UI**: Display upload speed test progress and results with cute, mobile-friendly design:
+  - Pre-stream test progress indicator with measured speed
+  - Quality tier assignment display based on upload speed
+  - Warning messages for low upload speeds
+  - Toast notifications for quality adjustments during streaming
+- **Quality Management Interface**: Visual indicators for current streaming quality with fun styling:
+  - Current quality tier display (very low, low, medium, high)
+  - Upload speed threshold status and compliance indicators
+  - Quality adjustment notifications and warnings
+- **Mobile Audio Output Controls**: Chrome/Android-specific audio control interface with cute design:
+  - Earpiece/Loudspeaker toggle button with clear visual indicators
+  - Audio device selection interface for available output devices
+  - Visual feedback showing current audio output mode
+  - Integration with existing audio controls without disrupting functionality
+- **Safari Audio Output Toggle Component**: iOS Safari-specific audio control interface with consistent cute styling:
+  - "Use Speaker" button that appears when Safari/iOS is detected
+  - Visual indicator showing current audio output mode (speaker/earpiece)
+  - Toggle state management with clear user feedback
+  - Integration with existing audio controls without disrupting other browser functionality
+- **Stream Recovery UI Components**: Visual indicators and controls for stream recovery with engaging design:
+  - Recovery status indicators showing reconnection progress
+  - ICE restart progress displays with cute animations
+  - Track reattachment status with clear visual feedback
+  - Network condition recovery indicators with friendly messaging
+- **Background Session UI Components**: Visual indicators for background session management with cute design:
+  - Tab visibility status indicators showing background/foreground state
+  - Heartbeat status displays with friendly animations
+  - Background session preservation indicators
+  - Resource conservation status with clear visual feedback
+- **Renegotiation Status UI Components**: Visual indicators for full mesh renegotiation with engaging design:
+  - Renegotiation progress indicators showing synchronization status
+  - Peer connection status displays during renegotiation events
+  - Renegotiation completion indicators with success/failure feedback
+  - Connection graph visualization showing mesh completeness
+- **Ghost User Prevention UI Components**: Visual indicators for ghost user prevention system with cute design:
+  - Heartbeat timeout status indicators with friendly animations
+  - Unload detection status displays with clear visual feedback
+  - Ghost user cleanup notifications with engaging messaging
+  - Session validation indicators showing active status
+
+### Background Session Management Implementation
+- **Tab Visibility Event Handling**: Implement comprehensive tab visibility management without triggering disconnection:
+  - Listen to `visibilitychange` events to detect tab backgrounding/foregrounding
+  - Maintain room connection and presence when tab becomes hidden
+  - Preserve session in active peers list during tab visibility changes
+  - Update UI indicators to show background session status
+- **Active Session Heartbeat System**: Implement heartbeat mechanism to maintain session during background state:
+  - Send periodic heartbeat signals to backend `updateHeartbeat(sessionId, roomId)` endpoint
+  - Continue heartbeat transmission when tab is backgrounded
+  - Adjust heartbeat frequency based on tab visibility state
+  - Handle heartbeat failures gracefully without triggering disconnection
+- **Background Resource Management**: Implement resource conservation during background state:
+  - Pause or reduce video stream quality when tab is backgrounded
+  - Maintain audio streams for ongoing communication
+  - Reduce polling frequency for non-critical updates
+  - Resume full functionality when tab returns to foreground
+- **Selective Disconnection Logic**: Only trigger full disconnection for explicit user actions:
+  - Detect browser tab closure using `beforeunload` and `pagehide` events
+  - Trigger disconnection on explicit navigation away from room
+  - Maintain connection during tab switching, minimization, and focus loss
+  - Distinguish between temporary backgrounding and permanent departure
+- **Background Stream Management**: Handle WebRTC streams appropriately during background state:
+  - Maintain peer connections during tab backgrounding
+  - Pause local video transmission to conserve resources
+  - Continue audio communication for ongoing conversations
+  - Resume full streaming when tab returns to foreground
+- **Presence Preservation**: Ensure users remain visible in connected users list during background state:
+  - Maintain session presence in backend active peers list
+  - Continue heartbeat to prevent session timeout
+  - Update UI to indicate background users without removing them
+  - Preserve room membership across tab visibility changes
+
+### Ghost User Prevention Implementation
+- **Frontend Unload Detection**: Implement comprehensive browser event detection for immediate cleanup:
+  - Add `beforeunload` event listener to detect browser tab closure and navigation away from application
+  - Add `pagehide` event listener as fallback for mobile browsers and iOS Safari
+  - Add `visibilitychange` event listener to distinguish between backgrounding and departure
+  - Trigger immediate `leaveRoom(roomId, sessionId)` call only for actual departure events
+- **Selective Event Handling**: Distinguish between different browser events to prevent false disconnections:
+  - `beforeunload` and `pagehide` events trigger immediate cleanup for actual departure
+  - `visibilitychange` events with `document.hidden = true` maintain session for backgrounding
+  - Only call backend cleanup for events indicating permanent departure
+  - Preserve session continuity during tab switching and temporary backgrounding
+- **Immediate Cleanup Execution**: Execute cleanup operations synchronously during unload events:
+  - Use synchronous HTTP requests or `navigator.sendBeacon()` for reliable cleanup during unload
+  - Ensure cleanup completes before browser tab closes or navigation occurs
+  - Handle cleanup failures gracefully without blocking browser navigation
+  - Log cleanup events for monitoring and debugging purposes
+- **Cross-Platform Compatibility**: Ensure unload detection works across different browsers and devices:
+  - Test and verify functionality on Chrome, Firefox, Safari, and mobile browsers
+  - Handle browser-specific event behavior and timing differences
+  - Implement fallback mechanisms for browsers with limited unload event support
+  - Ensure consistent behavior across desktop and mobile platforms
+
+### Mobile Audio Output Implementation
+- **Chrome/Android setSinkId() Support**: Implement audio output device selection for Chrome on Android devices
+- **Audio Device Detection**: Detect available audio output devices using enumerateDevices() API
+- **setSinkId() Integration**: Use setSinkId() method to switch between earpiece and loudspeaker on supported devices
+- **Device Selection Interface**: Provide user interface for selecting audio output device
+- **Audio Routing Management**: Manage audio routing between different output devices
+- **Mobile Device Detection**: Detect Chrome/Android devices where setSinkId() is available
+- **Cross-Platform Compatibility**: Ensure mobile audio controls work alongside existing WebRTC audio management
+- **State Persistence**: Maintain audio output device preference throughout the call session
+- **Error Handling**: Handle setSinkId() failures gracefully with fallback options
+
+### Safari Audio Output Implementation
+- **iOS Safari Detection**: Implement browser and device detection to identify Safari on iOS devices where `setSinkId()` is unavailable
+- **Audio Element Management**: Create and manage dedicated HTML audio elements for remote peer audio streams to enable speaker routing
+- **Speaker Toggle Logic**: Implement toggle functionality that switches audio routing between earpiece and speaker modes
+- **Audio Stream Routing**: Route remote peer audio through HTML audio elements when speaker mode is enabled on iOS Safari
+- **Toggle State Persistence**: Maintain audio output preference state throughout the call session
+- **Visual Feedback**: Provide clear visual indicators for current audio output mode and toggle availability
+- **Seamless Integration**: Integrate Safari audio toggle with existing WebRTC audio management without affecting other browsers
+- **Consistent iOS Functionality**: Ensure Safari speaker toggle works correctly and consistently across all iOS devices with proper testing and verification
+
+### Stream Reconnect Logic Implementation
+- **Robust Recovery System**: Implement comprehensive stream recovery to prevent users from being dropped during network issues or camera restarts
+- **Automatic ICE Restarts**: Trigger automatic ICE restart when connection issues are detected using restartIce() method
+- **Track Reattachment**: Automatically reattach media tracks when streams are recovered after interruption
+- **Network Condition Monitoring**: Monitor network conditions using connection quality APIs and proactively handle connection degradation
+- **Camera Restart Recovery**: Handle camera restart scenarios without dropping the user from the room by maintaining peer connections
+- **Connection State Recovery**: Maintain peer connections during temporary network interruptions and resume seamlessly
+- **Graceful Reconnection**: Ensure smooth reconnection process without disrupting other participants in the room
+- **Recovery Status Display**: Provide visual feedback about recovery progress and connection status
+- **Proactive Recovery**: Detect potential connection issues early and initiate recovery before complete disconnection
+- **Multi-Peer Recovery**: Coordinate recovery across multiple peer connections simultaneously
+
+### Full Mesh Renegotiation Implementation
+- **Automatic Peer Synchronization**: When any participant joins or leaves a room, automatically trigger renegotiation for all existing peers:
+  - Monitor active peers list changes from backend
+  - Detect new participants joining the room
+  - Detect participants leaving the room
+  - Trigger synchronized renegotiation across all active connections
+- **Complete Mesh Connectivity**: Ensure no peers are skipped in the negotiation graph:
+  - Maintain connection map of all active peer relationships
+  - Verify all peers have connections to every other peer
+  - Identify missing connections and establish them automatically
+  - Remove stale connections for departed peers
+- **Dynamic Connection Management**: Create, update, or clean up peer connections dynamically:
+  - Create new RTCPeerConnection instances for new participants
+  - Update existing connections during renegotiation events
+  - Clean up connections for departed participants
+  - Handle connection state transitions during renegotiation
+- **Coordinated Renegotiation Process**: Implement synchronized offer/answer exchange:
+  - Coordinate renegotiation timing across all peers
+  - Handle simultaneous offer/answer exchanges
+  - Manage ICE candidate exchange during renegotiation
+  - Ensure proper sequencing of signaling messages
+- **Fallback Retry Logic**: Implement retry mechanisms for missed renegotiations:
+  - Detect failed renegotiation attempts
+  - Retry renegotiation with exponential backoff
+  - Handle late joiners who missed initial renegotiation
+  - Provide fallback connection establishment for edge cases
+- **Renegotiation State Management**: Track renegotiation progress and completion:
+  - Monitor renegotiation events and their completion status
+  - Track which peers have completed renegotiation successfully
+  - Identify peers that need retry attempts
+  - Provide renegotiation status in debug panel
+- **Connection Graph Validation**: Continuously validate mesh completeness:
+  - Verify all expected peer connections are established
+  - Detect missing connections in the mesh topology
+  - Trigger corrective renegotiation for incomplete connections
+  - Maintain connection graph consistency across all participants
+
+### Browser Tab and Navigation Detection
+- **Enhanced Browser Event Listeners**: Implement comprehensive event listeners for browser tab and navigation events:
+  - `beforeunload` event listener for browser/tab closure and explicit navigation away from room
+  - `pagehide` event listener as fallback for mobile browsers for actual page departure
+  - `visibilitychange` event listener to distinguish between backgrounding and departure
+  - Coordinate event handling to prevent duplicate cleanup calls
+- **Background-Aware Cleanup**: Modify cleanup logic to distinguish between backgrounding and departure:
+  - Only call backend `leaveRoom(roomId, sessionId)` for actual browser closure or navigation
+  - Maintain WebRTC connections during tab backgrounding
+  - Preserve session presence during tab visibility changes
+  - Continue heartbeat transmission during background state
+- **Selective Disconnect Triggers**: Implement selective disconnection based on event type:
+  - Full cleanup for `beforeunload` and `pagehide` events indicating departure
+  - Background management for `visibilitychange` events indicating tab switching
+  - Maintain session continuity during focus loss and tab minimization
+- **Cross-Component Event Coordination**: Coordinate event handling between Room page and WebRTCManager:
+  - Separate background management from disconnection logic
+  - Maintain consistent session state across components
+  - Prevent duplicate cleanup calls during background transitions
+- **Mobile Browser Compatibility**: Handle mobile-specific navigation patterns and browser lifecycle events:
+  - Distinguish between app backgrounding and actual departure
+  - Maintain session continuity during mobile app switching
+  - Handle mobile browser lifecycle appropriately
+- **Immediate Cleanup Execution**: Execute cleanup operations reliably during unload events:
+  - Use `navigator.sendBeacon()` for reliable cleanup during unload
+  - Implement synchronous cleanup as fallback for critical operations
+  - Handle cleanup timing constraints during browser closure
+  - Ensure cleanup completes before navigation occurs
+
+### Network Change Detection and Reconnection
+- **Network Connection Monitoring**: Implement comprehensive network change detection using multiple browser APIs:
+  - `navigator.connection` API to monitor connection type changes (Wi-Fi, cellular, ethernet)
+  - `online` and `offline` window events to detect connectivity changes
+  - Connection quality monitoring to detect network degradation
+  - Network type transition detection (mobile ⇄ Wi-Fi switches)
+- **Automatic WebRTC Reconnection**: When network changes are detected, trigger graceful WebRTC renegotiation:
+  - Initiate ICE restart for all active peer connections using `restartIce()` method
+  - Preserve existing session ID and room membership during reconnection
+  - Maintain signaling state and active peer relationships
+  - Coordinate reconnection with all connected peers simultaneously
+- **Session Preservation**: Ensure users remain connected to rooms during network transitions:
+  - Maintain active room membership in backend during network switches
+  - Preserve session ID and user presence across network changes
+  - Prevent automatic room departure during temporary network disconnections
+  - Resume WebRTC connections with existing peers after network stabilization
+- **Graceful Reconnection Process**: Implement smooth reconnection flow:
+  - Detect network change and pause new connection attempts
+  - Wait for network stabilization before initiating reconnection
+  - Restart ICE gathering with new network interface
+  - Re-establish peer connections with all active room participants
+  - Resume media streams and signaling after successful reconnection
+- **Ghost Session Prevention**: Prevent duplicate or ghost sessions during network changes:
+  - Use existing session ID for reconnection attempts
+  - Coordinate with backend to maintain single session presence
+  - Clean up stale connection attempts from previous network
+  - Ensure idempotent room join operations during reconnection
+- **Enhanced Mobile Network Handling**: Implement mobile-specific network change optimizations:
+  - Detect mobile network type changes (3G, 4G, 5G, Wi-Fi)
+  - Apply mobile-optimized reconnection throttling
+  - Implement graceful reconnection flow for network switching
+  - Adjust retry thresholds dynamically based on mobile network conditions
+
+### Room Navigation and Cleanup
+- **Header Back Button Cleanup**: When user clicks the back button in the Header component, implement comprehensive cleanup process before navigation:
+  - **WebRTC Manager Cleanup**: Gracefully disconnect all peer connections by calling close() on each RTCPeerConnection
+  - **Media Stream Cleanup**: Stop all local audio and video tracks using track.stop() method
+  - **Timer Cleanup**: Clear all reconnection timers, signaling polling intervals, and any other active timers
+  - **Backend Session Cleanup**: Call backend `leaveRoom(roomId, sessionId)` to remove user from participant list and active peers
+  - **Signaling Cleanup**: Clear any pending signaling messages and stop signaling message polling
+  - **State Reset**: Reset all WebRTC-related state variables and connection maps
+- **Sequential Cleanup Process**: Execute cleanup steps in proper order to ensure complete resource deallocation
+- **Navigation After Cleanup**: Redirect to lobby only after all cleanup operations have completed successfully
+- **Error Handling**: Handle cleanup errors gracefully without blocking navigation to lobby
+- **Loading State**: Display appropriate loading indicator during cleanup process if needed
+
+### Room Joining Flow
+- Implement reliable room joining with pre-validation of room existence
+- Fetch current room information from backend before attempting to join
+- Display loading states during room join process ("Joining room..." message)
+- Implement retry logic for failed join attempts (up to 3 retries with exponential backoff)
+- Show clear user feedback messages for different join states:
+  - "Joining room..." during connection attempt
+  - "Reconnecting to room..." during retry attempts
+  - "Room not available, please refresh." for permanent failures
+- Handle transient "Room does not exist" errors with automatic retry
+- Provide fallback handling for persistent join failures
+- Ensure room cards in lobby trigger reliable join flow when clicked
+- **Trigger Peer Refresh**: When users join or leave, immediately refresh peer connections to initiate reconnection for new arrivals
+- **Renegotiation Trigger**: Automatically trigger full mesh renegotiation when joining rooms with existing participants
+
+### Session Management
+- Generate 8-character alphanumeric session ID on application start
+- Store session ID in localStorage or memory for session duration
+- Pass session ID with all backend requests
+- Broadcast session ID to backend when joining rooms
+- Remove session ID from backend when leaving rooms
+- **Stable Session Presence**: Maintain session presence across page reloads and component re-mounts without triggering automatic leave operations
+- **Debounced Presence Updates**: Implement client-side debouncing to prevent rapid join/leave calls during WebRTC reconnections or component lifecycle events
+- **Confirmed Disconnection Only**: Only trigger `leaveRoom` calls when user explicitly navigates away or closes the application, not during normal component operations
+- **Network Change Session Continuity**: Maintain session continuity during network changes:
+  - Preserve session ID across network transitions
+  - Maintain room membership during temporary disconnections
+  - Resume session state after network reconnection
+  - Prevent session duplication during network switches
+- **Background Session Continuity**: Maintain session continuity during tab backgrounding:
+  - Preserve session ID and room membership when tab loses focus
+  - Continue heartbeat transmission during background state
+  - Resume full functionality when tab returns to foreground
+  - Prevent session timeout during background periods
+
+### Connected Users List Management
+- **Real-time User List Updates**: Continuously poll backend `getActivePeers` endpoint to maintain current list of connected users
+- **Live Synchronization**: Update connected users list immediately when new users join or existing users leave the room
+- **Session ID Display**: Show each connected user by their 8-character session ID or shortened label
+- **UI Integration**: Position users list as side panel or overlay alongside video streams without interfering with main room interface
+- **Automatic Refresh**: Ensure users list refreshes during peer reconnections and connection state changes
+- **Current User Indication**: Highlight or mark the current user's session ID in the connected users list
+- **User Count Display**: Show total number of connected users in the list header
+- **Stable User Display**: Ensure users remain visible in the list and are only removed after verified disconnection or explicit navigation away
+- **Anti-Flickering Logic**: Prevent users from appearing and disappearing rapidly due to temporary connection issues or component re-renders
+- **Immediate Departure Reflection**: Update users list immediately when browser events trigger user disconnection for accurate real-time presence tracking
+- **Background User Indication**: Display background users in connected users list with appropriate visual indicators:
+  - Show backgrounded users with distinct styling or icons
+  - Maintain users in list during tab backgrounding
+  - Update visual indicators based on tab visibility state
+  - Preserve user presence during background periods
+- **Renegotiation Awareness**: Update users list to reflect renegotiation events and mesh connectivity status
+
+### Intelligent Video Layout Management
+- **Dynamic Grid Calculation**: Automatically calculate optimal video grid layout based on number of participants and available screen space
+- **Responsive Layout Adaptation**: Adjust video element sizes and positioning based on screen dimensions and orientation changes
+- **Participant Count Optimization**: Optimize layout for different participant counts (1-on-1, small groups, larger meetings)
+- **Aspect Ratio Management**: Maintain proper video aspect ratios while maximizing screen utilization
+- **Layout Transition Animations**: Smooth transitions when participants join or leave to prevent jarring layout changes
+- **Active Speaker Highlighting**: Implement active speaker detection and highlighting in the video grid:
+  - Detect active speakers using audio level analysis from WebRTC getStats()
+  - Dynamically resize or highlight active speaker's video feed
+  - Smooth transitions between active speakers
+  - Maintain responsive design during speaker changes
+- **Mobile-First Video Layout**: Optimize video grid specifically for mobile devices:
+  - Touch-friendly video controls and interactions
+  - Optimal video sizing for mobile screens
+  - Efficient layout for portrait and landscape orientations
+  - Swipe gestures for video navigation on mobile
+- **Renegotiation-Aware Layout**: Handle layout updates during full mesh renegotiation events:
+  - Maintain video layout stability during renegotiation
+  - Update layout smoothly as new connections are established
+  - Handle temporary connection states during renegotiation
+
+### Upload Speed Testing Implementation
+- **Pre-Stream Upload Speed Test**: Before enabling camera/video streaming, automatically run upload speed test:
+  - Create temporary RTCPeerConnection for testing purposes
+  - Use WebRTC `getStats()` API to measure outgoing bitrate over several seconds
+  - Calculate average upload speed in kbps from measured statistics
+  - Display test progress with loading indicator and measured speed
+- **Quality Threshold Enforcement**: Apply upload speed thresholds to determine streaming permissions:
+  - < 300 kbps: Block streaming entirely and display "Your connection is too slow to stream"
+  - 300–800 kbps: Allow very low quality (144p–160p) with warning notification
+  - 800–1500 kbps: Set low quality (240p–360p)
+  - 1500–3000 kbps: Set medium quality (480p–720p)
+  - > 3000 kbps: Allow high quality (720p–1080p)
+- **Continuous Upload Monitoring**: During active streaming, continuously monitor upload speed:
+  - Use `getStats()` API every few seconds to measure current upload bitrate
+  - Compare current upload speed against quality tier thresholds
+  - Automatically downgrade quality if upload speed drops below current tier
+- **Quality Adjustment Notifications**: Display user notifications for quality changes:
+  - Toast notifications when quality is automatically downgraded
+  - Warning messages when upload speed is insufficient for current quality
+  - Success notifications when quality can be upgraded due to improved upload speed
+- **Upload Speed Test Integration**: Integrate upload speed testing with existing WebRTC systems:
+  - Coordinate with peer connection management and signaling
+  - Store test results and quality assignments in session state
+  - Log upload speed events in debug panel and session logging
+
+### WebRTC Implementation
+- **ICE Server Configuration**: Configure RTCPeerConnection with both STUN and TURN servers in iceServers:
+  - STUN server: `stun:stun.l.google.com:19302` for NAT traversal
+  - TURN server: `turn:relay.metered.ca:443` with authentication credentials (username: `7094d3caa20544e7bd21926d`, password: `4XesGDN80SAzJUXK`) for restrictive firewall/NAT environments
+- **Enhanced TURN Connection Handling**: Implement robust TURN connection management with automatic retry and fallback mechanisms:
+  - **TURN Allocation Retry Logic**: Detect failed TURN allocations (403, 437, 486 errors) and automatically retry with fresh credentials after exponential backoff delay
+  - **TCP Fallback Implementation**: Automatically fall back to TURN over TCP when UDP TURN allocation fails or times out
+  - **Fresh Credential Management**: Generate and use fresh TURN credentials for retry attempts to handle credential expiration
+  - **Error Recovery System**: Implement comprehensive error recovery for common TURN and ICE failures without requiring manual page reloads
+  - **Retry Threshold Management**: Limit TURN retry attempts (maximum 3 retries per connection) with exponential backoff to prevent infinite retry loops
+- **Dynamic ICE Policy Adjustment**: Implement adaptive ICE policy management that automatically switches between connection modes based on network conditions:
+  - **Initial Dual-Mode**: Start with both STUN and TURN enabled for maximum connectivity options
+  - **Automatic Relay Fallback**: Switch to relay-only mode if initial ICE gathering fails or direct connection attempts timeout
+  - **Connection Success Tracking**: Monitor connection establishment success rates and adjust ICE policy preferences accordingly
+  - **Policy State Management**: Maintain per-peer ICE policy state and apply appropriate configuration for each connection attempt
+  - **Failure Detection**: Detect ICE gathering failures, connection timeouts, and failed direct connections to trigger policy adjustments
+- **Network Path Probing**: Implement comprehensive network path analysis on connection initialization:
+  - **Multi-Protocol Testing**: Attempt connections using both UDP and TCP protocols to determine optimal transport method
+  - **Latency Measurement**: Measure round-trip latency for each protocol and connection path
+  - **Packet Loss Detection**: Monitor packet loss rates during initial connection establishment
+  - **Optimal Route Selection**: Automatically select the most stable connection route based on latency and packet loss metrics
+  - **Fallback Prioritization**: Prioritize connection paths with lowest latency and packet loss for optimal performance
+  - **Probing Results Storage**: Store network path probing results for future connection optimization
+- **Adaptive TURN Prioritization**: Prioritize TURN relay routes for mobile connections or when unstable network conditions are detected to improve NAT traversal reliability
+- **Connection Type Detection**: Detect mobile vs desktop connections and automatically configure TURN relay preference for mobile users
+- **Automatic Media Stream Initialization**: When user joins a room, automatically request camera and microphone permissions and start local media stream
+- Display local media stream in debug panel with proper status indicators
+- Handle browser-level WebRTC peer-to-peer connections with robust signaling
+- Manage local media streams (audio/video) with automatic initialization
+- **Full Mesh Network Topology**: Implement complete mesh connections where every user maintains direct peer connections with every other user in the room:
+  - **Multi-Peer Connection Management**: Maintain separate RTCPeerConnection instances for each active peer using session IDs as identifiers
+  - **Bidirectional Connection Establishment**: When a new user joins, all existing users automatically initiate WebRTC offer/answer exchanges with the new participant
+  - **Automatic Peer Discovery**: Continuously monitor active peer lists from backend (`getActivePeers`) and establish connections with any unconnected peers
+  - **Synchronized Peer State**: Ensure all clients maintain identical peer connection maps based on active peers list from backend
+  - **Late-Joiner Integration**: When users join an existing room with multiple participants, automatically establish connections with all existing users
+- **Dynamic Peer Management**: Continuously monitor active peer lists from backend (`getActivePeers`) and synchronize with local session state
+- **Automatic Peer Connection Initiation**: When new peer joins, automatically initiate WebRTC offer/answer exchange for all existing participants
+- **Peer Departure Handling**: When user leaves room, remove their session from active peer connection list and close associated connections
+- **Auto-negotiation and Cleanup**: Reconnect new peers without page reloads through automatic negotiation
+- Implement continuous polling for both signaling messages and active peers list:
+  - Poll `getSignalingMessages` every few seconds for new messages
+  - Poll `getActivePeers` to detect new participants and synchronize peer state
+  - Process incoming offers, answers, and ICE candidates automatically
+  - Clear processed messages using `clearSignalingMessages`
+- **Enhanced Signaling Logic**: Automatically initiate offer/answer exchanges with peers from active peers list not yet connected locally
+- **Stale Peer Filtering**: Ignore stale peer session IDs in signaling message handling and replace only with current active peers to prevent ghost connections
+- **Automatic Peer Detection**: Polling system detects new peers from backend active list and creates peer connections automatically
+- **Fixed ICE Candidate Exchange**: 
+  - Send all local ICE candidates (including TURN relay candidates) to signaling server immediately upon generation using `sendSignalingMessage()`
+  - Apply remote ICE candidates immediately when received via `getSignalingMessages()` using `addIceCandidate()`
+  - Ensure SDP descriptions (offer/answer) are exchanged before applying ICE candidates to prevent "New" ICE states
+  - Implement proper sequencing to avoid ICE candidate application before connection establishment
+- **WebRTC Reliability Enhancements**:
+  - **Automatic Reconnection Logic**: If ICE connection fails or disconnects, attempt reconnection with exponential backoff (up to 3 retries per peer) before marking peer as disconnected
+  - **Media Health Monitoring**: Periodically verify (every 5 seconds) that audio/video tracks are active and bitrate or frozen frame counts do not drop unexpectedly
+  - **Stream Recovery**: On detection of stalled streams, perform automatic renegotiation
+  - **Connection State Management**: Handle simultaneous join/leave transitions without duplicating tracks or connections
+  - **ICE Refresh**: Refresh ICE connection if relay candidate fails mid-session while keeping TURN and STUN configurations intact
+- **Video Track Revalidation and Auto-Restart**:
+  - **Remote Video Stream Monitoring**: Monitor `ontrack` events and continuously validate that remote video streams remain active and non-null
+  - **Stalled Video Detection**: Detect when remote video streams stop, freeze, or become null and automatically trigger peer connection renegotiation
+  - **Local Camera Stream Monitoring**: Implement periodic checks (every 3-5 seconds) to verify local video capture is active and restart camera stream if stalled
+  - **Automatic Video Recovery**: When video stream issues are detected, automatically restart local video capture or renegotiate peer connections without disrupting audio communication
+  - **Audio Preservation**: Ensure video recovery mechanisms prioritize maintaining stable audio communication during video stream recovery
+  - **Recovery Status Tracking**: Track and display video recovery status in debug panel with states like "Video OK", "Video Stalled - Restarting", "Camera Restarting"
+  - **Non-Disruptive Recovery**: Implement video stream recovery that maintains existing audio tracks and peer connections while only restarting problematic video components
+- **Adaptive Bitrate and Resolution Scaling**:
+  - **Real-time Network Statistics Monitoring**: Continuously monitor RTCP bandwidth and packet loss statistics for each peer connection
+  - **Dynamic Quality Adjustment**: Automatically adjust outgoing video bitrate and resolution based on network conditions:
+    - Reduce bitrate and resolution when packet loss exceeds 5% or bandwidth drops significantly
+    - Increase quality when network conditions improve and bandwidth is available
+    - Implement smooth transitions between quality levels to avoid abrupt changes
+  - **Stalled Video Track Detection**: Monitor video track statistics to detect frozen or stalled streams and automatically trigger connection renegotiation
+  - **Quality Level Management**: Implement multiple quality presets (low, medium, high) with automatic switching based on network performance
+- **Advanced Connection Metrics Collection**: Implement comprehensive real-time metrics gathering:
+  - **Per-Peer Bitrate Monitoring**: Track incoming and outgoing audio/video bitrates for each peer connection
+  - **Packet Loss Measurement**: Monitor packet loss percentage using RTCP statistics
+  - **Jitter Analysis**: Measure jitter in milliseconds for audio and video streams
+  - **Latency Tracking**: Calculate round-trip latency for each peer connection
+  - **Retry Count Logging**: Track connection retry attempts and success/failure rates
+- **ICE Candidate Analysis System**: Implement detailed ICE candidate tracking and analysis:
+  - **Candidate Type Classification**: Categorize and display ICE candidates by type (host, srflx, relay)
+  - **Candidate Selection Monitoring**: Track which candidates are selected for active connections
+  - **Real-time Candidate Updates**: Display candidate gathering progress and selection changes
+  - **Candidate Performance Analysis**: Monitor performance characteristics of different candidate types
+- **Connection State Transition Tracking**: Implement comprehensive state monitoring:
+  - **Detailed State Progression**: Track complete ICE connection lifecycle (New → Checking → Connected → Failed)
+  - **Transition Timestamps**: Record precise timestamps for each state change
+  - **State Duration Analysis**: Calculate time spent in each connection state
+  - **Visual State Timeline**: Display connection establishment timeline in debug panel
+- **Event Badge and Notification System**: Implement visual event tracking:
+  - **Media Track Events**: Display badges for "Track Started" and "Track Ended" events
+  - **Connection Events**: Show badges for "Renegotiation Initiated" and "TURN Relay Active"
+  - **Recovery Events**: Display "Revalidation Success/Failure" badges for stream recovery
+  - **Real-time Badge Updates**: Update badges immediately when events occur
+  - **Event History**: Maintain history of recent events with timestamps
+- **Comprehensive Session Logging**: Implement detailed event logging system:
+  - **Event Capture**: Log all WebRTC events, state changes, and performance metrics
+  - **Structured Logging**: Organize logs with timestamps, event types, and detailed context
+  - **Real-time Log Updates**: Update logs continuously during session
+  - **Log Aggregation**: Combine logs from all peer connections and system components
+- **Debug Data Export Functionality**: Implement session data export capabilities:
+  - **JSON Export**: Generate downloadable JSON files containing complete session data
+  - **Comprehensive Data**: Include all events, metrics, state transitions, and performance data
+  - **Export Trigger**: Provide user interface button to initiate export
+  - **Data Formatting**: Structure exported data for easy analysis and debugging
+- **Network Change Aware WebRTC**: Implement WebRTC reconnection on network changes:
+  - **Network Event Integration**: Connect network change detection with WebRTC reconnection logic
+  - **ICE Restart on Network Change**: Automatically trigger ICE restart for all peer connections when network changes are detected
+  - **Graceful Reconnection**: Maintain existing peer relationships and session state during network transitions
+  - **Connection Recovery**: Re-establish media streams and signaling after network stabilization
+  - **Peer Coordination**: Coordinate reconnection attempts with all active peers simultaneously
+- **Enhanced Mobile Network Resilience**: Implement mobile-specific connection optimizations:
+  - **Mobile Network Quality Monitoring**: Track bitrate, packet loss, candidate pair state, and reconnect attempts specifically for mobile users
+  - **Dynamic Mobile Retry Logic**: Adjust retry logic thresholds dynamically based on mobile network type (3G, 4G, 5G)
+  - **Mobile-Optimized Reconnection Throttling**: Implement smarter reconnection throttling to minimize redundant peer restarts under poor mobile network conditions
+  - **Mobile Network Type Detection**: Detect and adapt to different mobile network types with appropriate connection strategies
+- **Advanced Network Resilience Optimizations**: Implement comprehensive network stability features:
+  - **ICE Stagnation Detection**: Monitor ICE connection state and automatically trigger renegotiation when long ICE stagnation is detected (no progress for 30+ seconds)
+  - **Graceful Network Switching**: Implement graceful reconnection flow specifically for users switching between different networks (Wi-Fi ↔ cellular)
+  - **Intelligent Reconnection Throttling**: Implement smarter reconnection throttling that considers network conditions and prevents redundant peer restart attempts
+  - **Connection Quality Thresholds**: Set dynamic quality thresholds that adapt to current network conditions and user device type
+- Handle WebRTC events properly:
+  - onicecandidate: Send ICE candidates (STUN and TURN) to specific peers via backend immediately
+  - ontrack: Attach remote media streams to new video elements dynamically
+  - Connection state monitoring and error handling with detailed logging
+- Maintain peer connection state using session IDs as identifiers
+- **Dynamic Video Element Creation**: Create new video elements for each established peer connection
+- **Real-time Debug Panel Updates**: Update debug panel to reflect all advanced metrics, connection states, event badges, and logging information
+- Automatic cleanup of stale connections and video feeds when participants leave
+- Remove session from active peers list when leaving room or closing application
+- **Automatic Offer/Answer Handshake**: Ensure all known peers trigger offer/answer sequences for bidirectional media connections
+- **Presence-Aware WebRTC**: Avoid triggering `leaveRoom` calls during WebRTC reconnection attempts or temporary connection failures
+- **Advanced WebRTC Streaming Optimizations**: Implement cutting-edge streaming enhancements for optimal video quality and network adaptation:
+  - **Simulcast/SVC (Scalable Video Coding) Implementation**: Enable multi-quality layered video streaming with automatic adaptation:
+    - Configure RTCPeerConnection with simulcast encoding parameters for multiple quality layers (low, medium, high resolution/bitrate)
+    - Implement automatic layer selection based on receiver bandwidth and network conditions
+    - Enable SVC temporal and spatial scalability for smooth quality transitions
+    - Coordinate layer switching between peers through signaling messages
+    - Display active quality layers and current selection in debug panel
+  - **Prioritized Audio Transport**: Ensure audio channels maintain precedence over video during network congestion:
+    - Configure separate audio and video transport priorities using RTCRtpSender.setParameters()
+    - Implement audio-first bandwidth allocation during congestion detection
+    - Maintain audio quality and stability even when video quality degrades
+    - Monitor and display audio priority status in debug panel
+  - **Dynamic Frame Rate Limiting**: Implement adaptive FPS reduction under network strain:
+    - Monitor network conditions and automatically reduce frame rate when bandwidth is limited
+    - Implement smooth FPS transitions (30fps → 15fps → 10fps) instead of video freezing
+    - Restore higher frame rates when network conditions improve
+    - Display current FPS and adaptation status in debug panel
+  - **Keyframe Request Optimization**: Enhance keyframe management for smooth quality transitions:
+    - Automatically request keyframes when bitrate or resolution changes occur
+    - Implement keyframe requests after stream recovery or reconnection events
+    - Optimize keyframe timing to minimize visual artifacts during quality switches
+    - Track and display keyframe request events in debug panel
+  - **Enhanced Bandwidth Estimation and Congestion Control**: Improve network feedback and pacing:
+    - Integrate with WebRTC's Google Congestion Control (GCC) for enhanced bandwidth estimation
+    - Implement real-time network pacing metrics collection and analysis
+    - Expose live bandwidth estimation and congestion control feedback in debug panel
+    - Use enhanced feedback for more accurate quality adaptation decisions
+    - Display network pacing metrics and congestion control status in real-time
+- **Upload Speed Test Integration with WebRTC**: Integrate upload speed testing with WebRTC implementation:
+  - **Pre-Stream Test Connection**: Create temporary RTCPeerConnection specifically for upload speed testing
+  - **getStats() Integration**: Use WebRTC getStats() API to measure outgoing bitrate during test period
+  - **Quality Constraint Application**: Apply measured upload speed constraints to video encoding parameters
+  - **Continuous Monitoring Integration**: Integrate ongoing upload speed monitoring with existing network statistics collection
+  - **Quality Adjustment Coordination**: Coordinate upload speed-based quality adjustments with existing adaptive bitrate systems
+- **Mobile Audio Output Integration with WebRTC**: Integrate mobile audio controls with WebRTC audio management:
+  - **setSinkId() Implementation**: Use setSinkId() method to control audio output device on Chrome/Android
+  - **Device Selection Coordination**: Coordinate audio device selection with existing WebRTC audio management
+  - **Cross-Platform Compatibility**: Maintain existing WebRTC audio functionality for non-mobile browsers
+  - **State Synchronization**: Synchronize mobile audio output state with WebRTC audio streams
+- **Safari Audio Output Integration with WebRTC**: Integrate Safari audio toggle with WebRTC audio management:
+  - **Audio Element Creation**: Create dedicated HTML audio elements for remote peer streams when Safari/iOS is detected
+  - **Stream Routing**: Route remote audio streams through HTML audio elements for speaker output control
+  - **Toggle Coordination**: Coordinate speaker/earpiece toggle with existing WebRTC audio management
+  - **Seamless Switching**: Enable seamless switching between audio output modes without disrupting call quality
+  - **Cross-Browser Compatibility**: Maintain existing WebRTC audio functionality for non-Safari browsers
+- **Stream Recovery Integration with WebRTC**: Integrate stream recovery with WebRTC implementation:
+  - **ICE Restart Integration**: Coordinate ICE restart with existing WebRTC connection management
+  - **Track Reattachment Logic**: Implement automatic track reattachment when streams are recovered
+  - **Recovery Coordination**: Coordinate recovery across multiple peer connections simultaneously
+  - **State Preservation**: Maintain WebRTC state during recovery operations
+  - **Recovery Status Integration**: Integrate recovery status with existing debug panel and logging systems
+- **Background-Aware WebRTC Management**: Integrate background session management with WebRTC:
+  - **Background Stream Handling**: Pause or reduce video quality during tab backgrounding while maintaining peer connections
+  - **Heartbeat Integration**: Coordinate WebRTC state with heartbeat system during background periods
+  - **Resource Conservation**: Implement resource-efficient WebRTC management during background state
+  - **Foreground Recovery**: Resume full WebRTC functionality when tab returns to foreground
+- **Full Mesh Renegotiation Integration with WebRTC**: Integrate coordinated renegotiation with WebRTC implementation:
+  - **Renegotiation Event Handling**: Handle room membership change events that trigger full mesh renegotiation
+  - **Synchronized Offer/Answer Exchange**: Coordinate simultaneous offer/answer exchanges across all active peers
+  - **Connection State Synchronization**: Maintain consistent connection state across all peers during renegotiation
+  - **Renegotiation Retry Logic**: Implement retry mechanisms for failed renegotiation attempts
+  - **Mesh Completeness Validation**: Continuously validate that all expected peer connections are established
+  - **Renegotiation Status Tracking**: Track renegotiation progress and completion across all peer connections
+
+### Advanced Debug Panel Features
+- Real-time display of peer connection states for each session ID with cute, mobile-friendly design
+- Visual status indicators showing connection progress and media stream status
+- **Local Media Status**: Show local stream active status with audio/video enabled indicators
+- Track count display for remote streams per peer
+- **Pending Message Counter**: Display count of pending signaling messages
+- **Active Peer Counter**: Show number of connected peers with real-time updates from backend active peers list
+- **ICE Candidate Monitoring**: Display ICE candidate count and connection state changes for network traversal verification
+- **TURN Relay Status**: Indicate when TURN relay server is being used for connection establishment
+- **Enhanced Debug Logging**: Show detailed connection progression and ICE candidate exchange status
+- **Reliability Status Display**: Show reconnection attempts, stream recovery actions, and track status ("active", "recovering", "stalled")
+- **Adaptive Quality Metrics**: Display real-time bitrate, resolution, and packet loss statistics for each peer connection
+- **Network Performance Indicators**: Show RTCP bandwidth measurements, quality adjustment events, and current quality level for each peer
+- **TURN Relay Priority Status**: Display when TURN relay is being prioritized for mobile or unstable connections
+- **Video Track Revalidation Indicators**: Display video stream health status including:
+  - "Video OK" for healthy video streams
+  - "Video Stalled - Restarting" when remote video issues are detected
+  - "Camera Restarting" when local video capture is being restarted
+  - Recovery progress indicators showing revalidation attempts
+  - Separate status tracking for local and remote video streams per peer
+- **Dynamic ICE Policy Indicators**: Display current ICE policy mode for each peer connection:
+  - "Direct" mode when using both STUN and TURN servers
+  - "Relay-Only" mode when switched to TURN-only configuration
+  - Real-time updates when ICE policy switches occur during connection attempts
+  - Policy change timestamps and trigger reasons (timeout, failure, success rate)
+- **Network Path Probing Display**: Show network path probing results and analysis:
+  - UDP and TCP latency measurements for each peer connection
+  - Packet loss detection results and percentages
+  - Selected optimal route indicator (UDP/TCP preference)
+  - Probing status ("Probing", "Complete", "Failed") with real-time updates
+  - Historical probing data for connection optimization tracking
+- **Advanced Per-Peer Metrics Dashboard**: Comprehensive real-time metrics display for each peer:
+  - **Bitrate Monitoring**: Separate incoming/outgoing audio and video bitrate displays with trend indicators
+  - **Packet Loss Visualization**: Real-time packet loss percentage with color-coded severity indicators
+  - **Jitter Measurements**: Audio and video jitter in milliseconds with stability indicators
+  - **Latency Display**: Round-trip latency with connection quality assessment
+  - **Retry Counter**: Connection retry attempts with success/failure history
+  - **Metrics History**: Short-term historical graphs for trend analysis
+- **ICE Candidate Analysis Panel**: Detailed ICE candidate information display:
+  - **Candidate Type Breakdown**: Visual categorization of host, srflx, and relay candidates
+  - **Active Candidate Indicators**: Highlight currently selected candidates for each peer
+  - **Candidate Performance**: Show performance metrics for different candidate types
+  - **Gathering Progress**: Real-time updates during ICE candidate gathering phase
+  - **Selection Timeline**: Display candidate selection history and changes
+- **Connection State Timeline**: Visual representation of connection lifecycle:
+  - **State Progression Diagram**: Visual timeline showing New → Checking → Connected → Failed transitions
+  - **Transition Timestamps**: Precise timing information for each state change
+  - **Duration Indicators**: Time spent in each connection state
+  - **State History**: Historical view of connection state changes
+  - **Failure Analysis**: Detailed information when connections fail
+- **Event Badge System**: Visual event tracking and notification system:
+  - **Media Event Badges**: "Track Started", "Track Ended" with media type indicators
+  - **Connection Event Badges**: "Renegotiation Initiated", "TURN Relay Active" with status colors
+  - **Recovery Event Badges**: "Revalidation Success", "Revalidation Failure" with outcome indicators
+  - **Network Change Badges**: "Network Changed", "ICE Restart", "Reconnection Success/Failed" with network type indicators
+  - **Badge Persistence**: Recent event badges remain visible with fade-out animation
+  - **Event Counter**: Number indicators for repeated events
+- **Enhanced TURN and Error Recovery Badges**: Additional event badges for improved TURN handling:
+  - **TURN Retry Badges**: "TURN Retry" badge with retry attempt counter and timestamp
+  - **TCP Fallback Badges**: "TCP Fallback" badge when switching from UDP to TCP for TURN connections
+  - **Error Recovery Badges**: "Error Recovery" badge for ICE/TURN error recovery (403, 437, 486 errors) with error code display
+  - **Fresh Credential Badges**: "Fresh Credentials" badge when new TURN credentials are generated for retry attempts
+- **Advanced Mobile Connection Diagnostics Display**: Enhanced debug panel for mobile connection troubleshooting:
+  - **TURN Allocation Status Panel**: Real-time display of TURN server allocation attempts, success/failure rates, and retry statistics
+  - **ICE Failure Code Display**: Detailed display of specific ICE failure codes (403, 437, 486) with error descriptions and recovery status
+  - **Mobile Network Analysis**: Show detected mobile network type (3G, 4G, 5G) with connection quality metrics and signal strength
+  - **Connection Retry Dashboard**: Display retry attempt counts, success rates, and failure patterns specifically for mobile connections
+  - **TURN Server Response Analysis**: Show detailed TURN server response codes, allocation failure reasons, and server health status
+  - **Mobile Error Recovery Tracking**: Display mobile-specific connection error recovery attempts, success indicators, and recovery timing
+  - **Network Quality Correlation**: Show correlation between mobile network type and connection success rates
+- **Session Event Log Viewer**: Comprehensive logging interface within debug panel:
+  - **Real-time Log Stream**: Continuously updating log of all session events
+  - **Event Filtering**: Filter logs by event type, peer, or severity level
+  - **Timestamp Display**: Precise timestamps for all logged events
+  - **Event Details**: Expandable entries showing detailed event context
+  - **Log Search**: Search functionality for finding specific events or patterns
+- **Enhanced Session Logging**: Extended logging capabilities for TURN and mobile optimizations:
+  - **TURN Event Logging**: Log TURN allocation attempts, failures, retries, and TCP fallback events
+  - **Mobile Network Logging**: Log mobile network type detection, dynamic retry adjustments, and mobile-specific reconnection events
+  - **Error Recovery Logging**: Detailed logging of error recovery attempts with specific error codes and recovery success/failure status
+- **Export Controls**: User interface for session data export:
+  - **Export Button**: Prominent button to trigger session log download
+  - **Export Options**: Choose data range and detail level for export
+  - **Export Status**: Progress indicator during export generation
+  - **File Format**: JSON format with structured, analyzable data
+  - **Export History**: Track of previous exports with timestamps
+- **Network Change Detection Display**: Real-time network monitoring interface:
+  - **Current Network Type**: Display active connection type (Wi-Fi, cellular, ethernet)
+  - **Network Change Events**: Show timestamps and details of network transitions
+  - **Reconnection Status**: Display automatic reconnection progress and success indicators
+  - **ICE Restart Indicators**: Show ICE restart events and completion status
+  - **Session Preservation Status**: Indicate whether session and room membership are maintained during network changes
+- **Enhanced Mobile Network Monitoring Display**: Mobile-specific network monitoring interface:
+  - **Mobile Network Type Display**: Show specific mobile network type (3G, 4G, 5G) with signal strength indicators
+  - **Dynamic Retry Threshold Display**: Show current retry thresholds adjusted for mobile network conditions
+  - **Mobile Reconnection Status**: Display mobile-optimized reconnection progress and throttling status
+  - **Network Switching Indicators**: Show graceful reconnection flow status during network switches
+- **Debug Panel Accessibility**: Ensure debug panel remains accessible and functional during all call sessions:
+  - **Persistent Mounting**: Debug panel remains mounted and accessible throughout active call sessions
+  - **Toggle Functionality**: Maintain toggle visibility controls during all connection states
+  - **Real-time Updates**: Ensure all metrics and status indicators update continuously during active calls
+  - **Performance Monitoring**: Display debug panel's own performance impact on WebRTC connections
+- Connection quality indicators and error states
+- Compact, non-intrusive overlay design with toggle visibility and cute styling
+- Display updated peer counts and connection statuses in real-time based on backend active peers data
+- **Expandable Sections**: Collapsible sections for different metric categories to manage panel size
+- **Advanced Streaming Optimization Display**: Real-time monitoring of streaming enhancements:
+  - **Simulcast/SVC Layer Indicators**: Display active quality layers (low, medium, high) for each peer with current selection highlighting
+  - **Audio Priority Status**: Show audio transport priority mode and congestion handling effectiveness
+  - **Dynamic Frame Rate Display**: Real-time FPS monitoring with adaptive limiting status and network strain indicators
+  - **Keyframe Request Tracking**: Display keyframe request events, optimization triggers, and timing information
+  - **Bandwidth Estimation Dashboard**: Show Google Congestion Control feedback, network pacing metrics, and live bandwidth estimates
+  - **Stream Adaptation Events**: Real-time notifications and history of quality layer switches, frame rate adjustments, and optimization events
+- **Upload Speed Test Debug Display**: Comprehensive upload speed testing monitoring:
+  - **Pre-Stream Test Results**: Display upload speed test progress, measured speed in kbps, and quality tier assignment
+  - **Continuous Monitoring Status**: Show ongoing upload speed measurements during streaming
+  - **Quality Threshold Compliance**: Display current quality tier and upload speed threshold status
+  - **Quality Adjustment Events**: Log and display automatic quality downgrades and upgrades with timestamps
+  - **Upload Speed History**: Show historical upload speed measurements and trends over time
+  - **Test Performance Metrics**: Display upload speed test accuracy, duration, and reliability indicators
+- **Mobile Audio Output Debug Display**: Monitor mobile audio output functionality:
+  - **Mobile Device Detection Status**: Display Chrome/Android detection results and setSinkId() compatibility
+  - **Audio Output Device Status**: Show current audio output device selection and available devices
+  - **setSinkId() Status**: Display setSinkId() API availability and functionality status
+  - **Device Selection Events**: Log audio output device selection events and state changes
+  - **Audio Routing Status**: Show audio device routing status and effectiveness
+- **Safari Audio Output Debug Display**: Monitor Safari audio output functionality:
+  - **iOS Detection Status**: Display Safari/iOS detection results and compatibility information
+  - **Audio Output Mode**: Show current audio output mode (speaker/earpiece) and toggle availability
+  - **Audio Element Status**: Display HTML audio element creation and management status
+  - **Toggle Event Logging**: Log audio output toggle events and state changes
+  - **Audio Routing Status**: Show audio stream routing status and effectiveness
+- **Stream Recovery Debug Display**: Monitor stream recovery functionality:
+  - **Recovery Event Tracking**: Display ICE restart events, track reattachment status, and recovery progress
+  - **Network Condition Monitoring**: Show network condition changes and recovery triggers
+  - **Camera Restart Status**: Display camera restart events and recovery success rates
+  - **Connection Recovery Metrics**: Show connection recovery effectiveness and timing data
+- **Background Session Debug Display**: Monitor background session management functionality:
+  - **Tab Visibility Status**: Display current tab visibility state and background session indicators
+  - **Heartbeat Monitoring**: Show heartbeat transmission status and session preservation state
+  - **Background Stream Status**: Display background stream management actions and resource conservation indicators
+  - **Session Preservation Tracking**: Show session preservation status during tab visibility changes
+- **Renegotiation Debug Display**: Monitor full mesh renegotiation functionality:
+  - **Renegotiation Event Tracking**: Display room-wide renegotiation triggers and progress indicators
+  - **Peer Synchronization Status**: Show renegotiation completion status for each peer connection
+  - **Renegotiation Retry Monitoring**: Display retry attempts and success rates for failed renegotiations
+  - **Connection Graph Status**: Show mesh completeness indicators and missing connection detection
+  - **Renegotiation Timing Metrics**: Display renegotiation duration and performance statistics
+- **Ghost User Prevention Debug Display**: Monitor ghost user prevention system functionality:
+  - **Heartbeat Timeout Status**: Display heartbeat timeout monitoring and cleanup event tracking
+  - **Unload Detection Status**: Show unload detection event monitoring and cleanup trigger status
+  - **Ghost User Cleanup Events**: Display ghost user removal events and timing information
+  - **Session Validation Status**: Show active session validation and timeout tracking indicators
+
+## Technical Notes
+- All WebRTC peer connections are handled client-side with continuous signaling coordination
+- Backend facilitates signaling with proper message routing between session IDs and maintains active peers lists
+- **ICE Server Integration**: All RTCPeerConnection instances must include both STUN and TURN server configuration to enable proper ICE candidate resolution across NATs and restrictive firewalls
+- **Enhanced TURN Reliability**: TURN connection handling includes automatic retry with fresh credentials, TCP fallback, and comprehensive error recovery for common TURN failures
+- **Dynamic ICE Policy Management**: ICE policy automatically adjusts from dual-mode to relay-only based on connection success rates and network conditions
+- **Network Path Optimization**: Network path probing determines optimal UDP/TCP routing for each peer connection based on latency and packet loss measurements
+- **Adaptive TURN Routing**: TURN relay servers are prioritized for mobile connections and unstable network conditions to improve connection reliability
+- **Automatic Media Initialization**: Local media stream starts automatically when joining rooms
+- **Active Peers Discovery**: Frontend queries backend for active peers list and initiates connections with unconnected peers
+- **Improved ICE Handling**: ICE candidates (including TURN relay candidates) are sent and applied immediately with proper sequencing to ensure successful peer-to-peer connections
+- **Connection Reliability**: Automatic reconnection with exponential backoff and media health monitoring ensure robust peer-to-peer connections
+- **Adaptive Quality Control**: Real-time monitoring of network statistics enables dynamic bitrate and resolution adjustments for optimal video quality
+- **Stalled Stream Recovery**: Automatic detection and renegotiation of stalled video tracks maintains consistent media flow
+- **Video Track Revalidation**: Continuous monitoring and automatic restart of stalled or missing video streams ensures reliable video communication while preserving audio stability
+- **Room Join Reliability**: Pre-validation of room existence and retry logic with clear user feedback ensures reliable room joining experience
+- **Complete Room Exit Process**: Comprehensive cleanup when leaving rooms ensures no residual connections, media streams, or backend participant entries remain
+- **Graceful Cleanup on Back Navigation**: Header back button triggers complete WebRTC cleanup including peer connection closure, media track stopping, timer clearing, and backend session removal before redirecting to lobby
+- **Selective Browser Event Handling**: Browser tab closure and navigation events trigger complete cleanup, while tab backgrounding and focus loss maintain session continuity through heartbeat mechanism
+- **Dynamic Peer Synchronization**: Continuous monitoring and synchronization of active peers ensures accurate peer connection management without ghost connections
+- **Connected Users List Synchronization**: Users list automatically updates based on active peers data from backend, ensuring accurate real-time display of connected participants with background user indication
+- **Background Session Management**: Tab visibility changes maintain room connection and presence through heartbeat system without triggering disconnection
+- **Heartbeat-Based Presence**: Session presence maintained through heartbeat mechanism during background periods, only removing sessions after heartbeat timeout
+- **Resource Conservation**: Background state triggers resource-efficient WebRTC management while preserving peer connections and room membership
+- **Idempotent Operations**: Backend join/leave operations handle duplicate calls gracefully to prevent presence flickering
+- **Debounced Presence Updates**: Both client and server implement debouncing to prevent rapid join/leave cycles during normal application operations
+- **Full Mesh Network Architecture**: Every user maintains direct peer connections with every other user in the room, enabling complete multi-way audio/video communication
+- **Scalable Peer Management**: Connection management scales to handle multiple simultaneous peer connections with proper resource allocation and cleanup
+- **Network-Aware Routing**: Connection type detection and adaptive TURN prioritization optimize routing for different network conditions
+- **Selective Disconnect Detection**: Event listeners distinguish between tab backgrounding and actual departure, only triggering cleanup for browser closure or explicit navigation
+- **Network Change Resilience**: Application maintains session continuity and automatically reconnects WebRTC connections during network transitions without losing room membership or creating ghost sessions
+- **ICE Restart Integration**: Network change detection triggers automatic ICE restart for all peer connections to re-establish optimal routing through new network interface
+- **Session Preservation**: User sessions and room memberships are preserved across network changes and tab backgrounding, ensuring seamless user experience during network transitions and tab switching
+- **Debug Panel Persistence**: Advanced WebRTC debug panel remains accessible and functional throughout all active call sessions, providing comprehensive real-time monitoring of connection metrics, network changes, and reconnection events
+- **Mobile Network Optimization**: Enhanced mobile network handling with dynamic retry thresholds, mobile-specific reconnection throttling, and graceful network switching
+- **Advanced Network Resilience**: ICE stagnation detection, intelligent reconnection throttling, and comprehensive error recovery ensure stable connections under various network conditions
+- **TURN Connection Analytics**: Comprehensive tracking and analysis of TURN connection patterns, retry success rates, and TCP fallback usage for connection optimization
+- Signaling messages are polled continuously and cleared after processing
+- Active peers list is polled continuously to detect new participants and remove stale sessions
+- Real-time updates for lobby and chat using canister messaging
+- Image uploads stored and served through the backend
+- All user identification based on anonymous session IDs instead of authentication
+- **Dynamic Video Management**: Video elements created and destroyed based on peer connection lifecycle
+- Connection cleanup required when users leave rooms to prevent stale video feeds and remove from active peers
+- **Advanced Debug Panel Integration**: Debug panel provides comprehensive real-time visibility into all WebRTC metrics, connection states, event tracking, and session logging for thorough troubleshooting and performance analysis
+- Session cleanup ensures proper removal from active peers list when users disconnect
+- **Bidirectional Connection Establishment**: All peers automatically establish connections with each other for complete mesh network topology
+- **TURN Relay Support**: TURN server enables media routing through relay for users behind restrictive NATs/firewalls when direct peer-to-peer connection fails
+- **Quality-Adaptive Streaming**: Automatic bitrate and resolution scaling based on real-time network conditions ensures optimal video quality for all participants
+- **Non-Disruptive Video Recovery**: Video stream revalidation and restart mechanisms maintain audio communication stability while recovering video streams
+- **Background-Aware Disconnect Detection**: Browser event listeners distinguish between tab backgrounding and actual departure, maintaining session continuity during tab switching while ensuring proper cleanup on browser closure
+- **Intelligent Connection Optimization**: Dynamic ICE policy adjustment and network path probing work together to establish the most reliable connection path for each peer based on real-time network analysis
+- **Seamless Integration**: Dynamic ICE policy and network path probing integrate with existing adaptive bitrate, connection recovery, and TURN prioritization systems without disrupting audio/video performance
+- **Comprehensive Metrics Collection**: Advanced metrics collection system gathers detailed performance data for each peer connection without impacting WebRTC performance
+- **Real-time Event Tracking**: Event badge system and session logging provide immediate visibility into connection events and state changes
+- **Exportable Debug Data**: Session log export functionality enables offline analysis and debugging of WebRTC connection issues
+- **Performance-Aware Debug Panel**: Debug panel designed to provide comprehensive diagnostics while minimizing impact on WebRTC connection performance
+- **Network Change Coordination**: Network change detection and automatic reconnection work seamlessly with existing WebRTC reliability features to maintain optimal connection quality across network transitions
+- **Enhanced TURN Error Recovery**: Comprehensive error recovery system handles TURN allocation failures, credential expiration, and common ICE errors without requiring manual intervention
+- **Mobile-Optimized Connection Management**: Mobile-specific optimizations ensure reliable connections across different mobile network types with appropriate retry strategies and reconnection throttling
+- **Advanced Streaming Optimization Integration**: Simulcast/SVC, prioritized audio transport, dynamic frame rate limiting, keyframe optimization, and enhanced bandwidth estimation work together seamlessly to provide optimal video streaming quality under all network conditions
+- **Scalable Video Coding Support**: SVC implementation enables smooth quality transitions without connection interruption, maintaining stable peer connections while adapting video quality layers
+- **Audio-First Architecture**: Audio transport prioritization ensures voice communication remains stable and clear even during severe network congestion or video quality degradation
+- **Intelligent Frame Rate Management**: Dynamic FPS limiting prevents video freezing by gracefully reducing frame rates, maintaining visual continuity during bandwidth constraints
+- **Optimized Keyframe Handling**: Strategic keyframe requests minimize visual artifacts during quality transitions and ensure smooth recovery after network events
+- **Enhanced Congestion Control**: Integration with Google Congestion Control provides superior bandwidth estimation and network pacing for optimal streaming performance
+- **Upload Speed Test Integration**: Pre-stream upload speed testing and continuous monitoring integrate seamlessly with existing WebRTC systems to provide intelligent quality gating and automatic quality adjustments based on measured upload capacity
+- **Quality Threshold Enforcement**: Upload speed thresholds automatically prevent streaming at unsupported quality levels and provide clear user feedback for connection limitations
+- **Continuous Quality Management**: Ongoing upload speed monitoring enables real-time quality adjustments during streaming to maintain optimal performance within available bandwidth constraints
+- **Intelligent Quality Gating**: Upload speed-based quality restrictions work in conjunction with existing adaptive bitrate systems to provide comprehensive quality management
+- **Edge Caching Performance**: Edge caching for lobby images and metadata reduces loading times and bandwidth usage, improving overall application performance
+- **Intelligent Video Layout Scaling**: Dynamic video grid layout automatically adapts to participant count and screen dimensions for optimal viewing experience across different devices and screen sizes, with active speaker highlighting for enhanced user experience
+- **Mobile Audio Output Compatibility**: Mobile audio output controls provide Chrome/Android users with earpiece/loudspeaker selection using setSinkId() API, ensuring optimal audio experience on mobile devices
+- **Safari Audio Output Compatibility**: Safari audio output toggle provides iOS users with speaker/earpiece control where native `setSinkId()` is unavailable, ensuring consistent audio experience across all platforms
+- **Cross-Browser Audio Management**: Mobile and Safari audio toggles integrate seamlessly with existing WebRTC audio management without affecting functionality on other browsers
+- **Platform-Aware Audio Controls**: Audio output controls automatically adapt based on browser and device detection to provide appropriate functionality for each platform
+- **Stream Recovery Integration**: Robust stream recovery system prevents user disconnection during network issues or camera restarts, maintaining session continuity and peer connections
+- **Proactive Recovery**: Stream recovery system detects potential issues early and initiates recovery before complete disconnection occurs
+- **Multi-Platform Recovery**: Stream recovery works across all platforms and browsers, ensuring consistent user experience during network or hardware issues
+- **Recovery Coordination**: Stream recovery coordinates across multiple peer connections to maintain room stability during individual user recovery events
+- **Background Session Continuity**: Background session management maintains room connection and presence during tab backgrounding through heartbeat mechanism, ensuring seamless user experience during tab switching
+- **Heartbeat-Based Session Management**: Heartbeat system preserves session presence during background periods while enabling resource conservation and proper cleanup detection
+- **Tab-Aware Resource Management**: Background state triggers appropriate resource conservation while maintaining essential communication functionality and room membership
+- **Selective Event Handling**: Browser event listeners distinguish between temporary backgrounding and permanent departure, ensuring appropriate response to different user actions
+- **Cute and Mobile-First Design Integration**: All UI components feature cohesive cute, fun, and mobile-first design with consistent styling, improved usability, and responsive layout hierarchy across the entire application
+- **Design System Consistency**: Unified design language ensures consistent user experience across lobby, room, chat, and debug interfaces with playful aesthetics and mobile optimization
+- **Mobile-Optimized Interactions**: Touch-friendly controls, appropriate sizing, and mobile-specific interaction patterns ensure optimal usability on mobile devices
+- **Responsive Layout Hierarchy**: Structured layout system adapts seamlessly across different screen sizes while maintaining visual hierarchy and usability
+- **Full Mesh Renegotiation Architecture**: Room membership changes trigger coordinated renegotiation across all active peers to ensure complete mesh connectivity without requiring manual reconnects or page reloads
+- **Synchronized Peer State Management**: All participants maintain identical peer connection maps and coordinate renegotiation events to ensure no peers are skipped in the connection graph
+- **Dynamic Connection Graph Validation**: Continuous validation of mesh completeness with automatic correction for missing connections ensures robust full mesh topology
+- **Renegotiation Retry and Fallback**: Comprehensive retry logic handles failed renegotiation attempts and late joiners to maintain mesh connectivity under all conditions
+- **Coordinated Signaling Integration**: Full mesh renegotiation integrates with existing signaling infrastructure to coordinate synchronized offer/answer exchanges across all participants
+- **Renegotiation Performance Monitoring**: Debug panel and logging systems track renegotiation events, completion rates, and performance metrics for troubleshooting and optimization
+- **Ghost User Prevention Architecture**: Comprehensive ghost user prevention system combines backend heartbeat timeout cleanup with frontend unload detection to automatically remove inactive users and prevent stale sessions
+- **Heartbeat Timeout Cleanup**: Backend automatically removes sessions that exceed heartbeat timeout threshold through scheduled cleanup processes, ensuring active peers lists remain accurate
+- **Unload Detection Cleanup**: Frontend detects browser tab closure and navigation events to trigger immediate cleanup, preventing ghost users from remaining in active peers lists
+- **Selective Event Handling**: System distinguishes between tab backgrounding and actual departure to prevent false disconnections while ensuring proper cleanup for permanent departures
+- **Automated Stale Session Removal**: Combined frontend and backend mechanisms ensure ghost users are removed automatically without manual intervention or page reloads
+- **Real-time Presence Accuracy**: Ghost user prevention system maintains accurate real-time presence tracking and connected users lists across all participants
+- Application content language is English
